@@ -112,6 +112,7 @@ rules:
   - ciliumcidrgroups
   - ciliuml2announcementpolicies
   - ciliumpodippools
+  - securitypolicies
   verbs:
   - list
   - watch

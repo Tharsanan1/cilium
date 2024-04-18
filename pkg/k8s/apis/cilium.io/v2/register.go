@@ -127,6 +127,18 @@ const (
 
 	// CECName is the full name of Cilium Envoy Config
 	CECName = CECPluralName + "." + CustomResourceDefinitionGroup
+
+	// Security Policy (SP)
+
+	// SPPluralName is the plural name of Security Policy
+	SPPluralName = "securitypolicies"
+
+	// SPKindDefinition is the kind name of Security Policy
+	SPKindDefinition = "SecurityPolicy"
+
+	// SPName is the full name of Security Policy
+	SPName = SPPluralName + "." + CustomResourceDefinitionGroup
+
 )
 
 // SchemeGroupVersion is group version used to register these objects
@@ -190,6 +202,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&CiliumEnvoyConfigList{},
 		&CiliumClusterwideEnvoyConfig{},
 		&CiliumClusterwideEnvoyConfigList{},
+		&SecurityPolicy{},
+		&SecurityPolicyList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)

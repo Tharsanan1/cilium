@@ -60,3 +60,11 @@ type CiliumNetworkPolicyNamespaceListerExpansion interface{}
 // CiliumNodeListerExpansion allows custom methods to be added to
 // CiliumNodeLister.
 type CiliumNodeListerExpansion interface{}
+
+// SecurityPolicyListerExpansion allows custom methods to be added to
+// SecurityPolicyLister.
+type SecurityPolicyListerExpansion interface{}
+
+// SecurityPolicyNamespaceListerExpansion allows custom methods to be added to
+// SecurityPolicyNamespaceLister.
+type SecurityPolicyNamespaceListerExpansion interface{}

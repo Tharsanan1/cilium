@@ -243,7 +243,8 @@ CRDS_CILIUM_V2 := ciliumnetworkpolicies \
                   ciliumlocalredirectpolicies \
                   ciliumegressgatewaypolicies \
                   ciliumenvoyconfigs \
-                  ciliumclusterwideenvoyconfigs
+                  ciliumclusterwideenvoyconfigs \
+                  securitypolicies 
 CRDS_CILIUM_V2ALPHA1 := ciliumendpointslices \
                         ciliumbgppeeringpolicies \
                         ciliumbgpclusterconfigs \
