@@ -17,6 +17,7 @@ import (
 	"github.com/cilium/cilium/pkg/k8s"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
+	k8sUtils "github.com/cilium/cilium/pkg/k8s/utils"
 	"github.com/cilium/cilium/pkg/slices"
 )
 
@@ -165,6 +166,11 @@ func (i *cecTranslator) getHTTPRouteListener(m *model.Model) []ciliumv2.XDSResou
 
 	if i.xffNumTrustedHops > 0 {
 		mutatorFuncs = append(mutatorFuncs, WithXffNumTrustedHops(i.xffNumTrustedHops))
+	}
+
+	if len(m.Security.Items) > 0 {
+		clusterName := fmt.Sprintf("%s/%s/%s", m.Namespace, m.Name, "auth")
+		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(*m.Security, clusterName))
 	}
 
 	l, _ := NewHTTPListenerWithDefaults("listener", i.secretsNamespace, tlsMap, mutatorFuncs...)
@@ -346,6 +352,19 @@ func (i *cecTranslator) getClusters(m *model.Model) []ciliumv2.XDSResource {
 				envoyClusters[clusterName], _ = NewTCPClusterWithDefaults(clusterName, clusterServiceName)
 			}
 		}
+	}
+
+	if len(m.Security.Items) > 0 {
+		clusterName := fmt.Sprintf("%s/%s/%s", m.Namespace, m.Name, "auth")
+		sortedClusterNames = append(sortedClusterNames, clusterName)
+		mutators := []ClusterMutator{
+			WithConnectionTimeout(5),
+			WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),
+			WithOutlierDetection(true),
+		}
+		host, port := k8sUtils.ExtractHostAndPort(m.Security.Items[0].Spec.JWT.Providers[0].RemoteJWKS.URI)
+		
+		envoyClusters[clusterName], _ = NewAuthHTTPCluster(clusterName, host, port, mutators...)
 	}
 
 	sort.Strings(sortedClusterNames)

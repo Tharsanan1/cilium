@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	mcsapiv1alpha1 "sigs.k8s.io/mcs-api/pkg/apis/v1alpha1"
+	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 )
 
 const (
@@ -18,6 +19,10 @@ const (
 
 func IsGateway(parent gatewayv1.ParentReference) bool {
 	return (parent.Kind == nil || *parent.Kind == kindGateway) && (parent.Group == nil || *parent.Group == gatewayv1.GroupName)
+}
+
+func IsTargetRefGateway(target gwapiv1a2.PolicyTargetReferenceWithSectionName) bool {
+	return string(target.Kind) == kindGateway && string(target.Group) == gatewayv1.GroupName
 }
 
 func IsService(be gatewayv1.BackendObjectReference) bool {

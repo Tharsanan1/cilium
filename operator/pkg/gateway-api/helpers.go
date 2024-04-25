@@ -13,6 +13,8 @@ import (
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/cilium/cilium/operator/pkg/model"
+	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	k8helpers "github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 )
 
 const (
@@ -175,4 +177,18 @@ func mergeMap(left, right map[string]string) map[string]string {
 func setMergedLabelsAndAnnotations(temp, desired client.Object) {
 	temp.SetAnnotations(mergeMap(temp.GetAnnotations(), desired.GetAnnotations()))
 	temp.SetLabels(mergeMap(temp.GetLabels(), desired.GetLabels()))
+}
+
+// FilteroutUnrelatedSPs filters out the unrelated security policies from the security policy list 
+func FilteroutUnrelatedSPs(spl *ciliumv2.SecurityPolicyList, gateway *gatewayv1.Gateway) {
+	var relatedSPs []ciliumv2.SecurityPolicy
+	if spl != nil {
+		for _, sp := range spl.Items {
+			ns := k8helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
+			if string(sp.Spec.TargetRef.Name) == gateway.GetName() && ns == gateway.GetNamespace() {
+				relatedSPs = append(relatedSPs, sp)
+			}
+		}
+	}
+	spl.Items = relatedSPs
 }

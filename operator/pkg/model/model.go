@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 )
 
 // Model holds an abstracted data model representing the translation
@@ -15,6 +16,9 @@ import (
 type Model struct {
 	HTTP []HTTPListener `json:"http,omitempty"`
 	TLS  []TLSListener  `json:"tls,omitempty"`
+	Security *ciliumv2.SecurityPolicyList `json:"security,omitempty"`
+	Name string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 func (m *Model) GetListeners() []Listener {

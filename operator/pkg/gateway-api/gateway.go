@@ -89,7 +89,7 @@ func (r *gatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Watch related namespace in allowed namespaces
 		Watches(&corev1.Namespace{},
 			r.enqueueRequestForAllowedNamespace()).
-		Watches(&ciliumv2.SecurityPolicy{}, r.enqueueRequestForAllowedNamespace()).
+		Watches(&ciliumv2.SecurityPolicy{}, r.enqueueRequestForRelatedSecurityPolicy()).
 		// Watch created and owned resources
 		Owns(&ciliumv2.CiliumEnvoyConfig{}).
 		Owns(&corev1.Service{}).
@@ -173,6 +173,47 @@ func (r *gatewayReconciler) enqueueRequestForOwningHTTPRoute() handler.EventHand
 		}
 
 		return getReconcileRequestsForRoute(context.Background(), r.Client, a, hr.Spec.CommonRouteSpec)
+	})
+}
+
+// enqueueRequestForRelatedSecurityPolicy returns an event handler for any changes with Security Policy
+// belonging to the given Gateway
+func (r *gatewayReconciler) enqueueRequestForRelatedSecurityPolicy() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, a client.Object) []reconcile.Request {
+		sp, ok := a.(*ciliumv2.SecurityPolicy)
+		if !ok {
+			return nil
+		}
+		scopedLog := log.WithFields(logrus.Fields{
+			logfields.Controller: gateway,
+			logfields.Resource: types.NamespacedName{
+				Namespace: sp.GetNamespace(),
+				Name:      sp.GetName(),
+			},
+		})
+		var reqs []reconcile.Request
+		// (parent.Kind == nil || *parent.Kind == kindGateway) && (parent.Group == nil || *parent.Group == gatewayv1.GroupName)
+		if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
+			ns := helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
+
+			gw := &gatewayv1.Gateway{}
+			if err := r.Client.Get(ctx, types.NamespacedName{
+				Namespace: ns,
+				Name:      string(sp.Spec.TargetRef.Name),
+			}, gw); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					scopedLog.WithError(err).Error("Failed to get Gateway")
+				}
+				return reqs
+			}
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: ns,
+					Name:      string(sp.Spec.TargetRef.Name),
+				},
+			})
+		}
+		return reqs
 	})
 }
 
@@ -276,6 +317,7 @@ func (r *gatewayReconciler) enqueueRequestForAllowedNamespace() handler.EventHan
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, ns client.Object) []reconcile.Request {
 		gateways := getGatewaysForNamespace(ctx, r.Client, ns)
 		reqs := make([]reconcile.Request, 0, len(gateways))
+		log.Infof("*************enqueueRequestForAllowedNamespace gateways length: %d, ns: %+v", len(gateways), ns)
 		for _, gw := range gateways {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: gw,

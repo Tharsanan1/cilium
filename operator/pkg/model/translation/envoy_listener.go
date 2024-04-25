@@ -9,8 +9,11 @@ import (
 	goslices "slices"
 	"syscall"
 
+	corev3 "github.com/cilium/proxy/go/envoy/config/core/v3"
 	envoy_config_core_v3 "github.com/cilium/proxy/go/envoy/config/core/v3"
 	envoy_config_listener "github.com/cilium/proxy/go/envoy/config/listener/v3"
+	routev3 "github.com/cilium/proxy/go/envoy/config/route/v3"
+	httpJWTAuthFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/jwt_authn/v3"
 	envoy_extensions_listener_proxy_protocol_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/proxy_protocol/v3"
 	envoy_extensions_listener_tls_inspector_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/tls_inspector/v3"
 	httpConnectionManagerv3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -19,6 +22,7 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/pkg/envoy"
@@ -55,6 +59,82 @@ func WithProxyProtocol() ListenerMutator {
 			},
 		}
 		listener.ListenerFilters = append([]*envoy_config_listener.ListenerFilter{proxyListener}, listener.ListenerFilters...)
+		return listener
+	}
+}
+
+func WithAuthFilter(security ciliumv2.SecurityPolicyList, clusterName string) ListenerMutator {
+	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
+		for _, filterChain := range listener.FilterChains {
+			for _, filter := range filterChain.Filters {
+				if filter.Name == httpConnectionManagerType {
+					tc := filter.GetTypedConfig()
+					switch tc.GetTypeUrl() {
+					case envoy.HttpConnectionManagerTypeURL:
+						hcm, err := tc.UnmarshalNew()
+						if err != nil {
+							continue
+						}
+						hcmConfig, ok := hcm.(*httpConnectionManagerv3.HttpConnectionManager)
+						if !ok {
+							continue
+						}
+						providerName := "hardCodedProvider"
+						pickedSec := security.Items[0]
+						// Prepare auth filter
+						authFilter := httpConnectionManagerv3.HttpFilter{
+							Name: "envoy.filters.http.JwtAuthentication",
+							ConfigType: &httpConnectionManagerv3.HttpFilter_TypedConfig{
+								TypedConfig: toAny(&httpJWTAuthFilter.JwtAuthentication{	
+									Providers: map[string]*httpJWTAuthFilter.JwtProvider{
+										providerName : &httpJWTAuthFilter.JwtProvider{
+											Issuer: pickedSec.Spec.JWT.Providers[0].Issuer,
+											ForwardPayloadHeader: "x-jwt-payload",
+											JwksSourceSpecifier: &httpJWTAuthFilter.JwtProvider_RemoteJwks{
+												RemoteJwks: &httpJWTAuthFilter.RemoteJwks{
+													HttpUri: &corev3.HttpUri{
+														Uri: pickedSec.Spec.JWT.Providers[0].RemoteJWKS.URI,
+														HttpUpstreamType: &corev3.HttpUri_Cluster{
+															Cluster: clusterName,
+														},
+														Timeout: &durationpb.Duration{
+															Seconds: 10,
+														},
+													},
+												},
+											},
+
+										},
+									},
+									Rules: []*httpJWTAuthFilter.RequirementRule{
+										&httpJWTAuthFilter.RequirementRule{
+											Match: &routev3.RouteMatch{
+												PathSpecifier: &routev3.RouteMatch_Prefix{
+													// Hard code to match all path. TODO fix this
+													Prefix: "/",
+												},
+											},
+											RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+												Requires: &httpJWTAuthFilter.JwtRequirement{
+													RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+														ProviderName: providerName,
+													},
+												},
+											},
+										},
+									},
+								}),
+							},
+						}
+
+						hcmConfig.HttpFilters = append([]*httpConnectionManagerv3.HttpFilter{&authFilter}, hcmConfig.HttpFilters...)
+						filter.ConfigType = &envoy_config_listener.Filter_TypedConfig{
+							TypedConfig: toAny(hcmConfig),
+						}
+					}
+				}
+			}
+		}
 		return listener
 	}
 }

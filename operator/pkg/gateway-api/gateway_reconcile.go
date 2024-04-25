@@ -108,6 +108,15 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	securityPolicyList := &ciliumv2.SecurityPolicyList{}
+	if err := r.Client.List(ctx, securityPolicyList); err != nil {
+		scopedLog.WithError(err).Error("Unable to list SecurityPolicies")
+		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
+	}
+
+	// Filter out unrelated SPs
+	FilteroutUnrelatedSPs(securityPolicyList, original)
+	
 	grants := &gatewayv1beta1.ReferenceGrantList{}
 	if err := r.Client.List(ctx, grants); err != nil {
 		scopedLog.WithError(err).Error("Unable to list ReferenceGrants")
@@ -133,7 +142,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	setGatewayAccepted(gw, true, "Gateway successfully scheduled")
 
 	// Step 3: Translate the listeners into Cilium model
-	cec, svc, ep, err := r.translator.Translate(&model.Model{HTTP: httpListeners, TLS: tlsListeners})
+	cec, svc, ep, err := r.translator.Translate(&model.Model{HTTP: httpListeners, TLS: tlsListeners, Security: securityPolicyList, Name: original.Name, Namespace: original.Namespace})
 	if err != nil {
 		scopedLog.WithError(err).Error("Unable to translate resources")
 		setGatewayAccepted(gw, false, "Unable to translate resources")
