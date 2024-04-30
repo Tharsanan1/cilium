@@ -45,6 +45,7 @@ func agentCRDResourceNames() []string {
 		CRDResourceName(v2alpha1.CCGName),
 		CRDResourceName(v2alpha1.CPIPName),
 		CRDResourceName(v2.SPName),
+		CRDResourceName(v2.BTPName),
 	}
 
 	if !option.Config.DisableCiliumEndpointCRD {

@@ -5,18 +5,18 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
   creationTimestamp: null
-  name: securitypolicies.cilium.io
+  name: backendtrafficpolicies.cilium.io
 spec:
   group: cilium.io
   names:
     categories:
     - cilium
-    kind: SecurityPolicy
-    listKind: SecurityPolicyList
-    plural: securitypolicies
+    kind: BackendTrafficPolicy
+    listKind: BackendTrafficPolicyList
+    plural: backendtrafficpolicies
     shortNames:
-    - sp
-    singular: securitypolicy
+    - btp
+    singular: backendtrafficpolicy
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -27,8 +27,8 @@ spec:
     name: v2
     schema:
       openAPIV3Schema:
-        description: SecurityPolicy allows the user to configure various security
-          settings for a Gateway.
+        description: BackendTrafficPolicy allows the user to configure the behavior
+          of the connection between the Envoy Proxy listener and the backend service.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -43,152 +43,295 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec defines the desired state of SecurityPolicy.
+            description: spec defines the desired state of BackendTrafficPolicy.
             properties:
-              jwt:
-                description: JWT defines the configuration for JSON Web Token (JWT)
-                  authentication.
+              rateLimit:
+                description: RateLimit allows the user to limit the number of incoming
+                  requests to a predefined value based on attributes within the traffic
+                  flow.
                 properties:
-                  providers:
-                    description: Providers defines the JSON Web Token (JWT) authentication
-                      provider type. When multiple JWT providers are specified, the
-                      JWT is considered valid if any of the providers successfully
-                      validate the JWT. For additional details, see https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html.
-                    items:
-                      description: JWTProvider defines how a JSON Web Token (JWT)
-                        can be verified.
-                      properties:
-                        audiences:
-                          description: Audiences is a list of JWT audiences allowed
-                            access. For additional details, see https://tools.ietf.org/html/rfc7519#section-4.1.3.
-                            If not provided, JWT audiences are not checked.
-                          items:
-                            type: string
-                          maxItems: 8
-                          type: array
-                        claimToHeaders:
-                          description: 'ClaimToHeaders is a list of JWT claims that
-                            must be extracted into HTTP request headers For examples,
-                            following config: The claim must be of type; string, int,
-                            double, bool. Array type claims are not supported'
-                          items:
-                            description: ClaimToHeader defines a configuration to
-                              convert JWT claims into HTTP headers
-                            properties:
-                              claim:
-                                description: 'Claim is the JWT Claim that should be
-                                  saved into the header : it can be a nested claim
-                                  of type (eg. "claim.nested.key", "sub"). The nested
-                                  claim name must use dot "." to separate the JSON
-                                  name path.'
-                                type: string
-                              header:
-                                description: Header defines the name of the HTTP request
-                                  header that the JWT Claim will be saved into.
-                                type: string
-                            required:
-                            - claim
-                            - header
-                            type: object
-                          type: array
-                        extractFrom:
-                          description: ExtractFrom defines different ways to extract
-                            the JWT token from HTTP request. If empty, it defaults
-                            to extract JWT token from the Authorization HTTP request
-                            header using Bearer schema or access_token from query
-                            parameters.
+                  global:
+                    description: Global defines global rate limit configuration.
+                    properties:
+                      rules:
+                        description: Rules are a list of RateLimit selectors and limits.
+                          Each rule and its associated limit is applied in a mutually
+                          exclusive way. If a request matches multiple rules, each
+                          of their associated limits get applied, so a single request
+                          might increase the rate limit counters for multiple rules
+                          if selected. The rate limit service will return a logical
+                          OR of the individual rate limit decisions of all matching
+                          rules. For example, if a request matches two rules, one
+                          rate limited and one not, the final decision will be to
+                          rate limit the request.
+                        items:
+                          description: RateLimitRule defines the semantics for matching
+                            attributes from the incoming requests, and setting limits
+                            for them.
                           properties:
-                            cookies:
-                              description: Cookies represents a list of cookie names
-                                to extract the JWT token from.
+                            clientSelectors:
+                              description: "ClientSelectors holds the list of select
+                                conditions to select specific clients using attributes
+                                from the traffic flow. All individual select conditions
+                                must hold True for this rule and its limit to be applied.
+                                \n If no client selectors are specified, the rule
+                                applies to all traffic of the targeted Route. \n If
+                                the policy targets a Gateway, the rule applies to
+                                each Route of the Gateway. Please note that each Route
+                                has its own rate limit counters. For example, if a
+                                Gateway has two Routes, and the policy has a rule
+                                with limit 10rps, each Route will have its own 10rps
+                                limit."
                               items:
-                                type: string
-                              type: array
-                            headers:
-                              description: Headers represents a list of HTTP request
-                                headers to extract the JWT token from.
-                              items:
-                                description: JWTHeaderExtractor defines an HTTP header
-                                  location to extract JWT token
+                                description: RateLimitSelectCondition specifies the
+                                  attributes within the traffic flow that can be used
+                                  to select a subset of clients to be ratelimited.
+                                  All the individual conditions must hold True for
+                                  the overall condition to hold True.
                                 properties:
-                                  name:
-                                    description: Name is the HTTP header name to retrieve
-                                      the token
-                                    type: string
-                                  valuePrefix:
-                                    description: 'ValuePrefix is the prefix that should
-                                      be stripped before extracting the token. The
-                                      format would be used by Envoy like "{ValuePrefix}<TOKEN>".
-                                      For example, "Authorization: Bearer <TOKEN>",
-                                      then the ValuePrefix="Bearer " with a space
-                                      at the end.'
-                                    type: string
-                                required:
-                                - name
+                                  headers:
+                                    description: Headers is a list of request headers
+                                      to match. Multiple header values are ANDed together,
+                                      meaning, a request MUST match all the specified
+                                      headers. At least one of headers or sourceCIDR
+                                      condition must be specified.
+                                    items:
+                                      description: HeaderMatch defines the match attributes
+                                        within the HTTP Headers of the request.
+                                      properties:
+                                        name:
+                                          description: Name of the HTTP header.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                        type:
+                                          default: Exact
+                                          description: Type specifies how to match
+                                            against the value of the header.
+                                          enum:
+                                          - Exact
+                                          - RegularExpression
+                                          - Distinct
+                                          type: string
+                                        value:
+                                          description: Value within the HTTP header.
+                                            Due to the case-insensitivity of header
+                                            names, "foo" and "Foo" are considered
+                                            equivalent. Do not set this field when
+                                            Type="Distinct", implying matching on
+                                            any/all unique values within the header.
+                                          maxLength: 1024
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    maxItems: 16
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  sourceCIDR:
+                                    description: SourceCIDR is the client IP Address
+                                      range to match on. At least one of headers or
+                                      sourceCIDR condition must be specified.
+                                    properties:
+                                      type:
+                                        default: Exact
+                                        type: string
+                                      value:
+                                        description: Value is the IP CIDR that represents
+                                          the range of Source IP Addresses of the
+                                          client. These could also be the intermediate
+                                          addresses through which the request has
+                                          flown through and is part of the  `X-Forwarded-For`
+                                          header. For example, `192.168.0.1/32`, `192.168.0.0/24`,
+                                          `001:db8::/64`.
+                                        maxLength: 256
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - value
+                                    type: object
                                 type: object
+                              maxItems: 8
                               type: array
-                            params:
-                              description: Params represents a list of query parameters
-                                to extract the JWT token from.
-                              items:
-                                type: string
-                              type: array
-                          type: object
-                        issuer:
-                          description: Issuer is the principal that issued the JWT
-                            and takes the form of a URL or email address. For additional
-                            details, see https://tools.ietf.org/html/rfc7519#section-4.1.1
-                            for URL format and https://rfc-editor.org/rfc/rfc5322.html
-                            for email format. If not provided, the JWT issuer is not
-                            checked.
-                          maxLength: 253
-                          type: string
-                        name:
-                          description: Name defines a unique name for the JWT provider.
-                            A name can have a variety of forms, including RFC1123
-                            subdomains, RFC 1123 labels, or RFC 1035 labels.
-                          maxLength: 253
-                          minLength: 1
-                          type: string
-                        recomputeRoute:
-                          description: RecomputeRoute clears the route cache and recalculates
-                            the routing decision. This field must be enabled if the
-                            headers generated from the claim are used for route matching
-                            decisions. If the recomputation selects a new route, features
-                            targeting the new matched route will be applied.
-                          type: boolean
-                        remoteJWKS:
-                          description: RemoteJWKS defines how to fetch and cache JSON
-                            Web Key Sets (JWKS) from a remote HTTP/HTTPS endpoint.
-                          properties:
-                            uri:
-                              description: URI is the HTTPS URI to fetch the JWKS.
-                                Envoy's system trust bundle is used to validate the
-                                server certificate.
-                              maxLength: 253
-                              minLength: 1
-                              type: string
+                            limit:
+                              description: Limit holds the rate limit values. This
+                                limit is applied for traffic flows when the selectors
+                                compute to True, causing the request to be counted
+                                towards the limit. The limit is enforced and the request
+                                is ratelimited, i.e. a response with 429 HTTP status
+                                code is sent back to the client when the selected
+                                requests have reached the limit.
+                              properties:
+                                requests:
+                                  type: integer
+                                unit:
+                                  description: RateLimitUnit specifies the intervals
+                                    for setting rate limits. Valid RateLimitUnit values
+                                    are "Second", "Minute", "Hour", and "Day".
+                                  enum:
+                                  - Second
+                                  - Minute
+                                  - Hour
+                                  - Day
+                                  type: string
+                              required:
+                              - requests
+                              - unit
+                              type: object
                           required:
-                          - uri
+                          - limit
                           type: object
-                      required:
-                      - name
-                      - remoteJWKS
-                      type: object
-                      x-kubernetes-validations:
-                      - message: claimToHeaders must be specified if recomputeRoute
-                          is enabled
-                        rule: '(has(self.recomputeRoute) && self.recomputeRoute) ?
-                          size(self.claimToHeaders) > 0 : true'
-                    maxItems: 4
-                    minItems: 1
-                    type: array
+                        maxItems: 64
+                        type: array
+                    required:
+                    - rules
+                    type: object
+                  local:
+                    description: Local defines local rate limit configuration.
+                    properties:
+                      rules:
+                        description: Rules are a list of RateLimit selectors and limits.
+                          If a request matches multiple rules, the strictest limit
+                          is applied. For example, if a request matches two rules,
+                          one with 10rps and one with 20rps, the final limit will
+                          be based on the rule with 10rps.
+                        items:
+                          description: RateLimitRule defines the semantics for matching
+                            attributes from the incoming requests, and setting limits
+                            for them.
+                          properties:
+                            clientSelectors:
+                              description: "ClientSelectors holds the list of select
+                                conditions to select specific clients using attributes
+                                from the traffic flow. All individual select conditions
+                                must hold True for this rule and its limit to be applied.
+                                \n If no client selectors are specified, the rule
+                                applies to all traffic of the targeted Route. \n If
+                                the policy targets a Gateway, the rule applies to
+                                each Route of the Gateway. Please note that each Route
+                                has its own rate limit counters. For example, if a
+                                Gateway has two Routes, and the policy has a rule
+                                with limit 10rps, each Route will have its own 10rps
+                                limit."
+                              items:
+                                description: RateLimitSelectCondition specifies the
+                                  attributes within the traffic flow that can be used
+                                  to select a subset of clients to be ratelimited.
+                                  All the individual conditions must hold True for
+                                  the overall condition to hold True.
+                                properties:
+                                  headers:
+                                    description: Headers is a list of request headers
+                                      to match. Multiple header values are ANDed together,
+                                      meaning, a request MUST match all the specified
+                                      headers. At least one of headers or sourceCIDR
+                                      condition must be specified.
+                                    items:
+                                      description: HeaderMatch defines the match attributes
+                                        within the HTTP Headers of the request.
+                                      properties:
+                                        name:
+                                          description: Name of the HTTP header.
+                                          maxLength: 256
+                                          minLength: 1
+                                          type: string
+                                        type:
+                                          default: Exact
+                                          description: Type specifies how to match
+                                            against the value of the header.
+                                          enum:
+                                          - Exact
+                                          - RegularExpression
+                                          - Distinct
+                                          type: string
+                                        value:
+                                          description: Value within the HTTP header.
+                                            Due to the case-insensitivity of header
+                                            names, "foo" and "Foo" are considered
+                                            equivalent. Do not set this field when
+                                            Type="Distinct", implying matching on
+                                            any/all unique values within the header.
+                                          maxLength: 1024
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    maxItems: 16
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  sourceCIDR:
+                                    description: SourceCIDR is the client IP Address
+                                      range to match on. At least one of headers or
+                                      sourceCIDR condition must be specified.
+                                    properties:
+                                      type:
+                                        default: Exact
+                                        type: string
+                                      value:
+                                        description: Value is the IP CIDR that represents
+                                          the range of Source IP Addresses of the
+                                          client. These could also be the intermediate
+                                          addresses through which the request has
+                                          flown through and is part of the  `X-Forwarded-For`
+                                          header. For example, `192.168.0.1/32`, `192.168.0.0/24`,
+                                          `001:db8::/64`.
+                                        maxLength: 256
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - value
+                                    type: object
+                                type: object
+                              maxItems: 8
+                              type: array
+                            limit:
+                              description: Limit holds the rate limit values. This
+                                limit is applied for traffic flows when the selectors
+                                compute to True, causing the request to be counted
+                                towards the limit. The limit is enforced and the request
+                                is ratelimited, i.e. a response with 429 HTTP status
+                                code is sent back to the client when the selected
+                                requests have reached the limit.
+                              properties:
+                                requests:
+                                  type: integer
+                                unit:
+                                  description: RateLimitUnit specifies the intervals
+                                    for setting rate limits. Valid RateLimitUnit values
+                                    are "Second", "Minute", "Hour", and "Day".
+                                  enum:
+                                  - Second
+                                  - Minute
+                                  - Hour
+                                  - Day
+                                  type: string
+                              required:
+                              - requests
+                              - unit
+                              type: object
+                          required:
+                          - limit
+                          type: object
+                        maxItems: 16
+                        type: array
+                    type: object
+                  type:
+                    description: Type decides the scope for the RateLimits. Valid
+                      RateLimitType values are "Global" or "Local".
+                    enum:
+                    - Global
+                    - Local
+                    type: string
                 required:
-                - providers
+                - type
                 type: object
               targetRef:
-                description: TargetRef is the name of the Gateway resource this policy
-                  is being attached to. This Policy and the TargetRef MUST be in the
+                description: targetRef is the name of the resource this policy is
+                  being attached to. This Policy and the TargetRef MUST be in the
                   same namespace for this Policy to have effect and be applied to
                   the Gateway.
                 properties:
@@ -239,7 +382,7 @@ spec:
             - targetRef
             type: object
           status:
-            description: Status defines the current status of SecurityPolicy.
+            description: status defines the current status of BackendTrafficPolicy.
             properties:
               ancestors:
                 description: "Ancestors is a list of ancestor resources (usually Gateways)

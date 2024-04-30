@@ -244,7 +244,8 @@ CRDS_CILIUM_V2 := ciliumnetworkpolicies \
                   ciliumegressgatewaypolicies \
                   ciliumenvoyconfigs \
                   ciliumclusterwideenvoyconfigs \
-                  securitypolicies 
+                  securitypolicies \
+									backendtrafficpolicies
 CRDS_CILIUM_V2ALPHA1 := ciliumendpointslices \
                         ciliumbgppeeringpolicies \
                         ciliumbgpclusterconfigs \

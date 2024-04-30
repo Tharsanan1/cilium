@@ -5,6 +5,14 @@
 
 package v2
 
+// BackendTrafficPolicyListerExpansion allows custom methods to be added to
+// BackendTrafficPolicyLister.
+type BackendTrafficPolicyListerExpansion interface{}
+
+// BackendTrafficPolicyNamespaceListerExpansion allows custom methods to be added to
+// BackendTrafficPolicyNamespaceLister.
+type BackendTrafficPolicyNamespaceListerExpansion interface{}
+
 // CiliumClusterwideEnvoyConfigListerExpansion allows custom methods to be added to
 // CiliumClusterwideEnvoyConfigLister.
 type CiliumClusterwideEnvoyConfigListerExpansion interface{}

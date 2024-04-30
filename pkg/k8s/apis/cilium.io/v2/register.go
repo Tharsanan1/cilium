@@ -133,11 +133,20 @@ const (
 	// SPPluralName is the plural name of Security Policy
 	SPPluralName = "securitypolicies"
 
-	// SPKindDefinition is the kind name of Security Policy
+	// BTPPluralName is the plural name of Security Policy
+	BTPPluralName = "backendtrafficpolicies"
+
+	// SPKindDefinition is the kind name of Backend Traffic Policy
 	SPKindDefinition = "SecurityPolicy"
+
+	// BTPKindDefinition is the kind name of Backend Traffic Policy
+	BTPKindDefinition = "BackendTrafficPolicy"
 
 	// SPName is the full name of Security Policy
 	SPName = SPPluralName + "." + CustomResourceDefinitionGroup
+
+	// BTPName is the full name of Backend Traffic Policy
+	BTPName = BTPPluralName + "." + CustomResourceDefinitionGroup
 
 )
 
@@ -204,6 +213,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&CiliumClusterwideEnvoyConfigList{},
 		&SecurityPolicy{},
 		&SecurityPolicyList{},
+		&BackendTrafficPolicy{},
+		&BackendTrafficPolicyList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
