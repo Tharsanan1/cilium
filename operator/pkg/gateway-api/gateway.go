@@ -192,7 +192,6 @@ func (r *gatewayReconciler) enqueueRequestForRelatedSecurityPolicy() handler.Eve
 			},
 		})
 		var reqs []reconcile.Request
-		// (parent.Kind == nil || *parent.Kind == kindGateway) && (parent.Group == nil || *parent.Group == gatewayv1.GroupName)
 		if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
 			ns := helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
 
@@ -212,6 +211,37 @@ func (r *gatewayReconciler) enqueueRequestForRelatedSecurityPolicy() handler.Eve
 					Name:      string(sp.Spec.TargetRef.Name),
 				},
 			})
+		} else if helpers.IsTargetRefHTTPRoute(sp.Spec.TargetRef) {
+			ns := helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
+			hr := &gatewayv1.HTTPRoute{}
+			if err := r.Client.Get(ctx, types.NamespacedName{
+				Namespace: ns,
+				Name:      string(sp.Spec.TargetRef.Name),
+			}, hr); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					scopedLog.WithError(err).Error("Failed to get HTTPRoute")
+				}
+				return reqs
+			}
+			for _, pRef := range hr.Spec.ParentRefs {
+				gwns := helpers.NamespaceDerefOr(pRef.Namespace, hr.GetNamespace())
+				gw := &gatewayv1.Gateway{}
+				if err := r.Client.Get(ctx, types.NamespacedName{
+					Namespace: gwns,
+					Name:      string(pRef.Name),
+				}, gw); err != nil {
+					if !k8serrors.IsNotFound(err) {
+						scopedLog.WithError(err).Error("Failed to get Gateway")
+					}
+					continue
+				}
+				reqs = append(reqs, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: ns,
+						Name:      string(pRef.Name),
+					},
+				})
+			}
 		}
 		return reqs
 	})

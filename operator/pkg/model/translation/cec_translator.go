@@ -13,13 +13,29 @@ import (
 	envoy_config_route_v3 "github.com/cilium/proxy/go/envoy/config/route/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/pkg/k8s"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 	k8sUtils "github.com/cilium/cilium/pkg/k8s/utils"
 	"github.com/cilium/cilium/pkg/slices"
+	"github.com/cilium/cilium/pkg/logging"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 )
+
+
+const (
+	Subsys = "gateway-controller"
+
+	gatewayClass = "gatewayClass"
+	gateway      = "gateway"
+	httpRoute    = "httpRoute"
+	grpcRoute    = "grpcRoute"
+)
+
+var log = logging.DefaultLogger.WithField(logfields.LogSubsys, Subsys)
+
 
 const (
 	secureHost   = "secure"
@@ -168,9 +184,8 @@ func (i *cecTranslator) getHTTPRouteListener(m *model.Model) []ciliumv2.XDSResou
 		mutatorFuncs = append(mutatorFuncs, WithXffNumTrustedHops(i.xffNumTrustedHops))
 	}
 
-	if len(m.Security.Items) > 0 {
-		clusterName := fmt.Sprintf("%s/%s/%s", m.Namespace, m.Name, "auth")
-		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(*m.Security, clusterName))
+	if len(m.Security) > 0 {
+		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(&m.Security))
 	}
 
 	l, _ := NewHTTPListenerWithDefaults("listener", i.secretsNamespace, tlsMap, mutatorFuncs...)
@@ -354,17 +369,18 @@ func (i *cecTranslator) getClusters(m *model.Model) []ciliumv2.XDSResource {
 		}
 	}
 
-	if len(m.Security.Items) > 0 {
-		clusterName := fmt.Sprintf("%s/%s/%s", m.Namespace, m.Name, "auth")
-		sortedClusterNames = append(sortedClusterNames, clusterName)
-		mutators := []ClusterMutator{
-			WithConnectionTimeout(5),
-			WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),
-			WithOutlierDetection(true),
+	if len(m.Security) > 0 {
+		for _, sec := range m.Security {
+			clusterName := helpers.GetAuthClusterName(sec.SecurityPolicy)
+			sortedClusterNames = append(sortedClusterNames, clusterName)
+			mutators := []ClusterMutator{
+				WithConnectionTimeout(5),
+				WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),
+				WithOutlierDetection(true),
+			}
+			host, port := k8sUtils.ExtractHostAndPort(sec.SecurityPolicy.Spec.JWT.Providers[0].RemoteJWKS.URI)
+			envoyClusters[clusterName], _ = NewAuthHTTPCluster(clusterName, host, port, mutators...)
 		}
-		host, port := k8sUtils.ExtractHostAndPort(m.Security.Items[0].Spec.JWT.Providers[0].RemoteJWKS.URI)
-		
-		envoyClusters[clusterName], _ = NewAuthHTTPCluster(clusterName, host, port, mutators...)
 	}
 
 	sort.Strings(sortedClusterNames)

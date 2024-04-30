@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
 )
 
 // Model holds an abstracted data model representing the translation
@@ -16,9 +18,14 @@ import (
 type Model struct {
 	HTTP []HTTPListener `json:"http,omitempty"`
 	TLS  []TLSListener  `json:"tls,omitempty"`
-	Security *ciliumv2.SecurityPolicyList `json:"security,omitempty"`
+	Security []Security `json:"security,omitempty"`
 	Name string `json:"name,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
+}
+
+type Security struct {
+	SecurityPolicy *ciliumv2.SecurityPolicy
+	HttpRouteRules []gatewayv1.HTTPRouteRule
 }
 
 func (m *Model) GetListeners() []Listener {

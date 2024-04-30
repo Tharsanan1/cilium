@@ -24,10 +24,13 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/pkg/envoy"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/slices"
+	v32 "github.com/cilium/proxy/go/envoy/type/matcher/v3"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 const (
@@ -63,7 +66,7 @@ func WithProxyProtocol() ListenerMutator {
 	}
 }
 
-func WithAuthFilter(security ciliumv2.SecurityPolicyList, clusterName string) ListenerMutator {
+func WithAuthFilter(security *[]model.Security) ListenerMutator {
 	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
 		for _, filterChain := range listener.FilterChains {
 			for _, filter := range filterChain.Filters {
@@ -79,50 +82,122 @@ func WithAuthFilter(security ciliumv2.SecurityPolicyList, clusterName string) Li
 						if !ok {
 							continue
 						}
-						providerName := "hardCodedProvider"
-						pickedSec := security.Items[0]
+						// prepare providers and rules
+						providers := make(map[string]*httpJWTAuthFilter.JwtProvider)
+						exactMatchRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
+						prefixMatchRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
+						regexMatchRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
+						gatewayRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
+						rules := make([]*httpJWTAuthFilter.RequirementRule, 0)
+						for _, sec := range *security {
+							sp := sec.SecurityPolicy
+							clusterName := helpers.GetAuthClusterName(sp)
+							providerName := fmt.Sprintf("provider_%s_%s", sp.GetName(), sp.GetNamespace())
+							providers[providerName] = &httpJWTAuthFilter.JwtProvider{
+								Issuer: sp.Spec.JWT.Providers[0].Issuer,
+								ForwardPayloadHeader: "x-jwt-payload",
+								JwksSourceSpecifier: &httpJWTAuthFilter.JwtProvider_RemoteJwks{
+									RemoteJwks: &httpJWTAuthFilter.RemoteJwks{
+										HttpUri: &corev3.HttpUri{
+											Uri: sp.Spec.JWT.Providers[0].RemoteJWKS.URI,
+											HttpUpstreamType: &corev3.HttpUri_Cluster{
+												Cluster: clusterName,
+											},
+											Timeout: &durationpb.Duration{
+												Seconds: 10,
+											},
+										},
+									},
+								},
+							}
+							if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
+								log.Infof("Sp identified as targetting gateway, %s", sp.GetName())
+								gatewayRules = append(rules, &httpJWTAuthFilter.RequirementRule{
+									Match: &routev3.RouteMatch{
+										PathSpecifier: &routev3.RouteMatch_Prefix{
+											Prefix: "/",
+										},
+									},
+									RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+										Requires: &httpJWTAuthFilter.JwtRequirement{
+											RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+												ProviderName: providerName,
+											},
+										},
+									},
+								})
+							} else {
+								log.Infof("Sp looping for route rules")
+								for _, rr := range sec.HttpRouteRules {
+									for _, match := range rr.Matches {
+										log.Infof("Sp match processing , %+v", *match.Path.Value)
+										if *match.Path.Type == gatewayv1.PathMatchExact {
+											exactMatchRules = append(exactMatchRules, &httpJWTAuthFilter.RequirementRule{
+												Match: &routev3.RouteMatch{
+													PathSpecifier: &routev3.RouteMatch_Path{
+														Path: *match.Path.Value,
+													},
+												},
+												RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+													Requires: &httpJWTAuthFilter.JwtRequirement{
+														RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+															ProviderName: providerName,
+														},
+													},
+												},
+											})
+										} else if *match.Path.Type == gatewayv1.PathMatchPathPrefix {
+											prefixMatchRules = append(prefixMatchRules, &httpJWTAuthFilter.RequirementRule{
+												Match: &routev3.RouteMatch{
+													PathSpecifier: &routev3.RouteMatch_Prefix{
+														Prefix: *match.Path.Value,
+													},
+												},
+												RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+													Requires: &httpJWTAuthFilter.JwtRequirement{
+														RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+															ProviderName: providerName,
+														},
+													},
+												},
+											})
+										} else if *match.Path.Type == gatewayv1.PathMatchRegularExpression {
+											regexMatchRules = append(regexMatchRules, &httpJWTAuthFilter.RequirementRule{
+												Match: &routev3.RouteMatch{
+													PathSpecifier: &routev3.RouteMatch_SafeRegex{
+														SafeRegex: &v32.RegexMatcher{
+															Regex: *match.Path.Value,
+														},
+													},
+												},
+												RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+													Requires: &httpJWTAuthFilter.JwtRequirement{
+														RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+															ProviderName: providerName,
+														},
+													},
+												},
+											})
+										} 
+										
+									}
+								}
+							}
+						} 
+
+						rules = append(rules, exactMatchRules...)
+						rules = append(rules, regexMatchRules...)
+						rules = append(rules, prefixMatchRules...)
+						rules = append(rules, gatewayRules...)
+						log.Infof("Sp rules, %+v", len(rules))
+
 						// Prepare auth filter
 						authFilter := httpConnectionManagerv3.HttpFilter{
 							Name: "envoy.filters.http.JwtAuthentication",
 							ConfigType: &httpConnectionManagerv3.HttpFilter_TypedConfig{
 								TypedConfig: toAny(&httpJWTAuthFilter.JwtAuthentication{	
-									Providers: map[string]*httpJWTAuthFilter.JwtProvider{
-										providerName : &httpJWTAuthFilter.JwtProvider{
-											Issuer: pickedSec.Spec.JWT.Providers[0].Issuer,
-											ForwardPayloadHeader: "x-jwt-payload",
-											JwksSourceSpecifier: &httpJWTAuthFilter.JwtProvider_RemoteJwks{
-												RemoteJwks: &httpJWTAuthFilter.RemoteJwks{
-													HttpUri: &corev3.HttpUri{
-														Uri: pickedSec.Spec.JWT.Providers[0].RemoteJWKS.URI,
-														HttpUpstreamType: &corev3.HttpUri_Cluster{
-															Cluster: clusterName,
-														},
-														Timeout: &durationpb.Duration{
-															Seconds: 10,
-														},
-													},
-												},
-											},
-
-										},
-									},
-									Rules: []*httpJWTAuthFilter.RequirementRule{
-										&httpJWTAuthFilter.RequirementRule{
-											Match: &routev3.RouteMatch{
-												PathSpecifier: &routev3.RouteMatch_Prefix{
-													// Hard code to match all path. TODO fix this
-													Prefix: "/",
-												},
-											},
-											RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
-												Requires: &httpJWTAuthFilter.JwtRequirement{
-													RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
-														ProviderName: providerName,
-													},
-												},
-											},
-										},
-									},
+									Providers: providers,
+									Rules: rules,
 								}),
 							},
 						}
