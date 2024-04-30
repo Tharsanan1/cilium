@@ -98,6 +98,8 @@ func (i *cecTranslator) Translate(namespace string, name string, model *model.Mo
 			},
 		},
 	}
+	model.Name = name
+	model.Namespace = namespace
 
 	cec.Spec.BackendServices = i.getBackendServices(model)
 	cec.Spec.Services = i.getServices(namespace, name)

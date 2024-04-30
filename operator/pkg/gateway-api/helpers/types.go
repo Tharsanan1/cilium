@@ -38,7 +38,7 @@ func GetAuthClusterName(sp *ciliumv2.SecurityPolicy) string {
 }
 
 func GetNamespacedAuthClusterName(sp *ciliumv2.SecurityPolicy, name string, namespace string) string {
-	return fmt.Sprintf("%s/%sauth_%s_%s", name, namespace, sp.GetName(), sp.GetNamespace())
+	return fmt.Sprintf("%s/%s/auth_%s_%s", namespace, name, sp.GetName(), sp.GetNamespace())
 }
 
 func IsService(be gatewayv1.BackendObjectReference) bool {
