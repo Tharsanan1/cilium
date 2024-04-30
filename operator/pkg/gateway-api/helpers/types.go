@@ -37,6 +37,10 @@ func GetAuthClusterName(sp *ciliumv2.SecurityPolicy) string {
 	return fmt.Sprintf("auth_%s_%s", sp.GetName(), sp.GetNamespace())
 }
 
+func GetNamespacedAuthClusterName(sp *ciliumv2.SecurityPolicy, name string, namespace string) string {
+	return fmt.Sprintf("%s/%sauth_%s_%s", name, namespace, sp.GetName(), sp.GetNamespace())
+}
+
 func IsService(be gatewayv1.BackendObjectReference) bool {
 	return (be.Kind == nil || *be.Kind == kindService) && (be.Group == nil || *be.Group == corev1.GroupName)
 }

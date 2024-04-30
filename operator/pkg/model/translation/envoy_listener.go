@@ -66,7 +66,8 @@ func WithProxyProtocol() ListenerMutator {
 	}
 }
 
-func WithAuthFilter(security *[]model.Security) ListenerMutator {
+func WithAuthFilter(m *model.Model) ListenerMutator {
+	security := m.Security
 	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
 		for _, filterChain := range listener.FilterChains {
 			for _, filter := range filterChain.Filters {
@@ -89,9 +90,9 @@ func WithAuthFilter(security *[]model.Security) ListenerMutator {
 						regexMatchRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
 						gatewayRules := make([]*httpJWTAuthFilter.RequirementRule, 0)
 						rules := make([]*httpJWTAuthFilter.RequirementRule, 0)
-						for _, sec := range *security {
+						for _, sec := range security {
 							sp := sec.SecurityPolicy
-							clusterName := helpers.GetAuthClusterName(sp)
+							clusterName := helpers.GetNamespacedAuthClusterName(sp, m.Name, m.Namespace)
 							providerName := fmt.Sprintf("provider_%s_%s", sp.GetName(), sp.GetNamespace())
 							providers[providerName] = &httpJWTAuthFilter.JwtProvider{
 								Issuer: sp.Spec.JWT.Providers[0].Issuer,

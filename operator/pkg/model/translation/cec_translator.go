@@ -185,7 +185,7 @@ func (i *cecTranslator) getHTTPRouteListener(m *model.Model) []ciliumv2.XDSResou
 	}
 
 	if len(m.Security) > 0 {
-		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(&m.Security))
+		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(m))
 	}
 
 	l, _ := NewHTTPListenerWithDefaults("listener", i.secretsNamespace, tlsMap, mutatorFuncs...)
