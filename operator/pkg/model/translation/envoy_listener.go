@@ -14,6 +14,8 @@ import (
 	envoy_config_listener "github.com/cilium/proxy/go/envoy/config/listener/v3"
 	routev3 "github.com/cilium/proxy/go/envoy/config/route/v3"
 	httpJWTAuthFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/jwt_authn/v3"
+	ratelimitFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/ratelimit/v3"
+	rlV3 "github.com/cilium/proxy/go/envoy/config/ratelimit/v3"
 	envoy_extensions_listener_proxy_protocol_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/proxy_protocol/v3"
 	envoy_extensions_listener_tls_inspector_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/tls_inspector/v3"
 	httpConnectionManagerv3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -111,23 +113,23 @@ func WithAuthFilter(m *model.Model) ListenerMutator {
 									},
 								},
 							}
-							if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
-								log.Infof("Sp identified as targetting gateway, %s", sp.GetName())
-								gatewayRules = append(rules, &httpJWTAuthFilter.RequirementRule{
-									Match: &routev3.RouteMatch{
-										PathSpecifier: &routev3.RouteMatch_Prefix{
-											Prefix: "/",
-										},
-									},
-									RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
-										Requires: &httpJWTAuthFilter.JwtRequirement{
-											RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
-												ProviderName: providerName,
-											},
-										},
-									},
-								})
-							} else {
+							// if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
+							// 	log.Infof("Sp identified as targetting gateway, %s", sp.GetName())
+							// 	gatewayRules = append(rules, &httpJWTAuthFilter.RequirementRule{
+							// 		Match: &routev3.RouteMatch{
+							// 			PathSpecifier: &routev3.RouteMatch_Prefix{
+							// 				Prefix: "/",
+							// 			},
+							// 		},
+							// 		RequirementType: &httpJWTAuthFilter.RequirementRule_Requires{
+							// 			Requires: &httpJWTAuthFilter.JwtRequirement{
+							// 				RequiresType: &httpJWTAuthFilter.JwtRequirement_ProviderName{
+							// 					ProviderName: providerName,
+							// 				},
+							// 			},
+							// 		},
+							// 	})
+							// } else {
 								log.Infof("Sp looping for route rules")
 								for _, rr := range sec.HttpRouteRules {
 									for _, match := range rr.Matches {
@@ -183,7 +185,7 @@ func WithAuthFilter(m *model.Model) ListenerMutator {
 										
 									}
 								}
-							}
+							// }
 						} 
 
 						rules = append(rules, exactMatchRules...)
@@ -204,6 +206,61 @@ func WithAuthFilter(m *model.Model) ListenerMutator {
 						}
 
 						hcmConfig.HttpFilters = append([]*httpConnectionManagerv3.HttpFilter{&authFilter}, hcmConfig.HttpFilters...)
+						filter.ConfigType = &envoy_config_listener.Filter_TypedConfig{
+							TypedConfig: toAny(hcmConfig),
+						}
+					}
+				}
+			}
+		}
+		return listener
+	}
+}
+
+func WithRLFilter(m *model.Model) ListenerMutator {
+	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
+		for _, filterChain := range listener.FilterChains {
+			for _, filter := range filterChain.Filters {
+				if filter.Name == httpConnectionManagerType {
+					tc := filter.GetTypedConfig()
+					switch tc.GetTypeUrl() {
+					case envoy.HttpConnectionManagerTypeURL:
+						hcm, err := tc.UnmarshalNew()
+						if err != nil {
+							continue
+						}
+						hcmConfig, ok := hcm.(*httpConnectionManagerv3.HttpConnectionManager)
+						if !ok {
+							continue
+						}
+						clusterName := helpers.GetNamespacedRLClusterName(m.Name, m.Namespace)
+						
+						// Prepare ratelimit filter
+						rlFilter := httpConnectionManagerv3.HttpFilter{
+							Name: "envoy.filters.http.ratelimit",
+							ConfigType: &httpConnectionManagerv3.HttpFilter_TypedConfig{
+								TypedConfig: toAny(&ratelimitFilter.RateLimit{	
+									Domain: "app",
+									FailureModeDeny: true,
+									// RequestType: "external",
+									Stage: 0,
+									RateLimitedAsResourceExhausted: true,
+									EnableXRatelimitHeaders: ratelimitFilter.RateLimit_DRAFT_VERSION_03,
+									RateLimitService: &rlV3.RateLimitServiceConfig{
+										GrpcService: &corev3.GrpcService{
+											TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
+												EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{
+													ClusterName: clusterName,
+												},
+											},
+										},
+										TransportApiVersion: corev3.ApiVersion_V3,
+									},
+								}),
+							},
+						}
+
+						hcmConfig.HttpFilters = append([]*httpConnectionManagerv3.HttpFilter{&rlFilter}, hcmConfig.HttpFilters...)
 						filter.ConfigType = &envoy_config_listener.Filter_TypedConfig{
 							TypedConfig: toAny(hcmConfig),
 						}

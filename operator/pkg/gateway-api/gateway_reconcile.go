@@ -108,12 +108,6 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return controllerruntime.Fail(err)
 		}
 	}
-
-	securityPolicyList := &ciliumv2.SecurityPolicyList{}
-	if err := r.Client.List(ctx, securityPolicyList); err != nil {
-		scopedLog.WithError(err).Error("Unable to list SecurityPolicies")
-		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
-	}
 	
 	grants := &gatewayv1beta1.ReferenceGrantList{}
 	if err := r.Client.List(ctx, grants); err != nil {
@@ -121,6 +115,14 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
 	}
 
+	backendTrafficPolicyList := &ciliumv2.BackendTrafficPolicyList{}
+	if err := r.Client.List(ctx, backendTrafficPolicyList); err != nil {
+		scopedLog.WithError(err).Error("Unable to list BackendTrafficPolicies")
+		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
+	}
+	scopedLog.Infof("BackendTrafficPolicies length before filter :  %d", len(backendTrafficPolicyList.Items))
+	filterBackendTrafficPolicies(backendTrafficPolicyList, r.filterHTTPRoutesByGateway(ctx, gw, httpRouteList.Items), original)
+	scopedLog.Infof("BackendTrafficPolicies length :  %d", len(backendTrafficPolicyList.Items))
 	httpListeners, tlsListeners := ingestion.GatewayAPI(ingestion.Input{
 		GatewayClass:    *gwc,
 		Gateway:         *gw,
@@ -130,6 +132,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		Services:        servicesList.Items,
 		ServiceImports:  serviceImportsList.Items,
 		ReferenceGrants: grants.Items,
+		BackendTrafficPolicies: backendTrafficPolicyList,
 	})
 
 	if err := r.setListenerStatus(ctx, gw, httpRouteList, tlsRouteList); err != nil {
@@ -138,6 +141,14 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
 	}
 	setGatewayAccepted(gw, true, "Gateway successfully scheduled")
+
+	securityPolicyList := &ciliumv2.SecurityPolicyList{}
+	if err := r.Client.List(ctx, securityPolicyList); err != nil {
+		scopedLog.WithError(err).Error("Unable to list SecurityPolicies")
+		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
+	}
+
+	
 
 	security := prepareSecurity(original, securityPolicyList, r.filterHTTPRoutesByGateway(ctx, gw, httpRouteList.Items))
 
@@ -183,33 +194,65 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return controllerruntime.Success()
 }
 
+func filterBackendTrafficPolicies(backendTrafficPolicyList *ciliumv2.BackendTrafficPolicyList, httproutes []gatewayv1.HTTPRoute, gateway *gatewayv1.Gateway) {
+	backendTrafficPolicies := make([]ciliumv2.BackendTrafficPolicy, 0)
+	if backendTrafficPolicyList != nil {
+		for _, btp := range backendTrafficPolicyList.Items {
+			ns := k8helpers.NamespaceDerefOr(btp.Spec.TargetRef.Namespace, btp.GetNamespace())
+			if helpers.IsTargetRefHTTPRoute(btp.Spec.TargetRef) {
+				for _, hr := range httproutes {
+					if string(btp.Spec.TargetRef.Name) == hr.GetName() && ns == hr.GetNamespace() {
+						backendTrafficPolicies = append(backendTrafficPolicies, btp)
+					}
+				}
+			}
+			if helpers.IsTargetRefGateway(btp.Spec.TargetRef) {
+				if string(btp.Spec.TargetRef.Name) == gateway.GetName() && ns == gateway.GetNamespace() {
+					backendTrafficPolicies = append(backendTrafficPolicies, btp)
+				}
+			}
+		}
+	}
+	backendTrafficPolicyList.Items = backendTrafficPolicies
+}
+
 func prepareSecurity(gateway *gatewayv1.Gateway, securityPolicyList *ciliumv2.SecurityPolicyList, httproutes []gatewayv1.HTTPRoute) []model.Security {
 	var security []model.Security
 	if securityPolicyList != nil {
+		targettedHttpRoutes := make(map[string]interface{})
 		for _, sp := range securityPolicyList.Items {
 			ns := k8helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
-			if helpers.IsTargetRefGateway(sp.Spec.TargetRef) {
-				if string(sp.Spec.TargetRef.Name) == gateway.GetName() {
-					security = append(security, model.Security{
-						SecurityPolicy: &sp,
-					})
-					continue
-				} else {
-					continue
-				}
-			} else if helpers.IsTargetRefHTTPRoute(sp.Spec.TargetRef) {
+			if helpers.IsTargetRefHTTPRoute(sp.Spec.TargetRef) {
 				for _, hr := range httproutes {
 					if string(sp.Spec.TargetRef.Name) == hr.GetName() && ns == hr.GetNamespace() {
 						security = append(security, model.Security{
 							SecurityPolicy: &sp,
 							HttpRouteRules: hr.Spec.Rules,
 						})
+						targettedHttpRoutes[helpers.GetNamespacedName(hr.GetNamespace(), hr.GetName())] = nil
 						continue
 					} else {
 						continue
 					}
 				}
-			}			
+			}
+		}
+		for _, sp := range securityPolicyList.Items {
+			var rules []gatewayv1.HTTPRouteRule
+			if helpers.IsTargetRefGateway(sp.Spec.TargetRef) && string(sp.Spec.TargetRef.Name) == gateway.GetName() {
+				for _, hr := range httproutes {
+					if _, found := targettedHttpRoutes[helpers.GetNamespacedName(hr.GetNamespace(), hr.GetName())]; !found {
+						rules = append(rules, hr.Spec.Rules...)
+					}
+				}
+				if len(rules) > 0 {
+					security = append(security, model.Security{
+						SecurityPolicy: &sp,
+						HttpRouteRules: rules,
+					})
+				}
+				break
+			}
 		}
 	}
 	log.Infof("returning sec list count %+v", len(securityPolicyList.Items))

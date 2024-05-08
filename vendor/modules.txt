@@ -598,6 +598,45 @@ github.com/eapache/queue
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
 github.com/emicklei/go-restful/v3/log
+# github.com/envoyproxy/go-control-plane v0.12.0
+## explicit; go 1.17
+github.com/envoyproxy/go-control-plane/envoy/annotations
+github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3
+github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3
+github.com/envoyproxy/go-control-plane/envoy/config/core/v3
+github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3
+github.com/envoyproxy/go-control-plane/envoy/config/listener/v3
+github.com/envoyproxy/go-control-plane/envoy/config/route/v3
+github.com/envoyproxy/go-control-plane/envoy/config/trace/v3
+github.com/envoyproxy/go-control-plane/envoy/data/accesslog/v3
+github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3
+github.com/envoyproxy/go-control-plane/envoy/service/accesslog/v3
+github.com/envoyproxy/go-control-plane/envoy/service/cluster/v3
+github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3
+github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3
+github.com/envoyproxy/go-control-plane/envoy/service/extension/v3
+github.com/envoyproxy/go-control-plane/envoy/service/listener/v3
+github.com/envoyproxy/go-control-plane/envoy/service/route/v3
+github.com/envoyproxy/go-control-plane/envoy/service/runtime/v3
+github.com/envoyproxy/go-control-plane/envoy/service/secret/v3
+github.com/envoyproxy/go-control-plane/envoy/type/http/v3
+github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3
+github.com/envoyproxy/go-control-plane/envoy/type/metadata/v3
+github.com/envoyproxy/go-control-plane/envoy/type/tracing/v3
+github.com/envoyproxy/go-control-plane/envoy/type/v3
+github.com/envoyproxy/go-control-plane/pkg/cache/types
+github.com/envoyproxy/go-control-plane/pkg/cache/v3
+github.com/envoyproxy/go-control-plane/pkg/log
+github.com/envoyproxy/go-control-plane/pkg/resource/v3
+github.com/envoyproxy/go-control-plane/pkg/server/config
+github.com/envoyproxy/go-control-plane/pkg/server/delta/v3
+github.com/envoyproxy/go-control-plane/pkg/server/rest/v3
+github.com/envoyproxy/go-control-plane/pkg/server/sotw/v3
+github.com/envoyproxy/go-control-plane/pkg/server/stream/v3
+github.com/envoyproxy/go-control-plane/pkg/server/v3
+github.com/envoyproxy/go-control-plane/pkg/test/v3
+github.com/envoyproxy/go-control-plane/ratelimit/config/ratelimit/v3
+github.com/envoyproxy/go-control-plane/ratelimit/service/ratelimit/v3
 # github.com/envoyproxy/protoc-gen-validate v1.0.4
 ## explicit; go 1.19
 github.com/envoyproxy/protoc-gen-validate/validate

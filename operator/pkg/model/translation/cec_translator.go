@@ -187,8 +187,12 @@ func (i *cecTranslator) getHTTPRouteListener(m *model.Model) []ciliumv2.XDSResou
 	}
 
 	if len(m.Security) > 0 {
+		log.Infof("Security identified %+v ", m.Security)
 		mutatorFuncs = append(mutatorFuncs, WithAuthFilter(m))
 	}
+
+	// Add ratelimit filter 
+	mutatorFuncs = append(mutatorFuncs, WithRLFilter(m))
 
 	l, _ := NewHTTPListenerWithDefaults("listener", i.secretsNamespace, tlsMap, mutatorFuncs...)
 	return []ciliumv2.XDSResource{l}
@@ -241,6 +245,7 @@ func (i *cecTranslator) getEnvoyHTTPRouteConfiguration(m *model.Model) []ciliumv
 
 	for _, l := range m.HTTP {
 		for _, r := range l.Routes {
+			log.Infof("inside for loop r : %s , %+v", r.Name, *r.Ratelimits)
 			port := insecureHost
 			if l.TLS != nil {
 				port = secureHost
@@ -383,6 +388,24 @@ func (i *cecTranslator) getClusters(m *model.Model) []ciliumv2.XDSResource {
 			host, port := k8sUtils.ExtractHostAndPort(sec.SecurityPolicy.Spec.JWT.Providers[0].RemoteJWKS.URI)
 			envoyClusters[clusterName], _ = NewAuthHTTPCluster(clusterName, host, port, mutators...)
 		}
+	}
+
+	// Add ratelimit cluster
+	rlClusterName := "ratelimit-cluster"
+	sortedClusterNames = append(sortedClusterNames, rlClusterName)
+	rlPort := 8081
+	rlHost := "10.96.0.253"
+	rlMutators := []ClusterMutator{
+		WithConnectionTimeout(5),
+		WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),
+		WithOutlierDetection(true),
+	}
+	var err error
+	envoyClusters[rlClusterName], err = NewRLHTTPCluster(rlClusterName, rlHost, uint32(rlPort), rlMutators...)
+	if err != nil {
+		log.Errorf("Error occurred while preparing ratelimit cluster, %+v", err)
+	} else {
+		log.Infof("No errors observed..... %+v", envoyClusters[rlClusterName])
 	}
 
 	sort.Strings(sortedClusterNames)

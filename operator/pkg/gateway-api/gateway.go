@@ -90,6 +90,7 @@ func (r *gatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Namespace{},
 			r.enqueueRequestForAllowedNamespace()).
 		Watches(&ciliumv2.SecurityPolicy{}, r.enqueueRequestForRelatedSecurityPolicy()).
+		Watches(&ciliumv2.BackendTrafficPolicy{}, r.enqueueRequestForRelatedBackendTrafficPolicy()).
 		// Watch created and owned resources
 		Owns(&ciliumv2.CiliumEnvoyConfig{}).
 		Owns(&corev1.Service{}).
@@ -217,6 +218,77 @@ func (r *gatewayReconciler) enqueueRequestForRelatedSecurityPolicy() handler.Eve
 			if err := r.Client.Get(ctx, types.NamespacedName{
 				Namespace: ns,
 				Name:      string(sp.Spec.TargetRef.Name),
+			}, hr); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					scopedLog.WithError(err).Error("Failed to get HTTPRoute")
+				}
+				return reqs
+			}
+			for _, pRef := range hr.Spec.ParentRefs {
+				gwns := helpers.NamespaceDerefOr(pRef.Namespace, hr.GetNamespace())
+				gw := &gatewayv1.Gateway{}
+				if err := r.Client.Get(ctx, types.NamespacedName{
+					Namespace: gwns,
+					Name:      string(pRef.Name),
+				}, gw); err != nil {
+					if !k8serrors.IsNotFound(err) {
+						scopedLog.WithError(err).Error("Failed to get Gateway")
+					}
+					continue
+				}
+				reqs = append(reqs, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: ns,
+						Name:      string(pRef.Name),
+					},
+				})
+			}
+		}
+		return reqs
+	})
+}
+
+// enqueueRequestForRelatedBackendTrafficPolicy returns an event handler for any changes with Backend traffic policy
+// belonging to the given Gateway
+func (r *gatewayReconciler) enqueueRequestForRelatedBackendTrafficPolicy() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, a client.Object) []reconcile.Request {
+		btp, ok := a.(*ciliumv2.BackendTrafficPolicy)
+		if !ok {
+			return nil
+		}
+		scopedLog := log.WithFields(logrus.Fields{
+			logfields.Controller: gateway,
+			logfields.Resource: types.NamespacedName{
+				Namespace: btp.GetNamespace(),
+				Name:      btp.GetName(),
+			},
+		})
+		var reqs []reconcile.Request
+		if helpers.IsTargetRefGateway(btp.Spec.TargetRef) {
+			ns := helpers.NamespaceDerefOr(btp.Spec.TargetRef.Namespace, btp.GetNamespace())
+
+			gw := &gatewayv1.Gateway{}
+			if err := r.Client.Get(ctx, types.NamespacedName{
+				Namespace: ns,
+				Name:      string(btp.Spec.TargetRef.Name),
+			}, gw); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					scopedLog.WithError(err).Error("Failed to get Gateway")
+				}
+				return reqs
+			}
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: ns,
+					Name:      string(btp.Spec.TargetRef.Name),
+				},
+			})
+		} else if helpers.IsTargetRefHTTPRoute(btp.Spec.TargetRef) {
+			ns := helpers.NamespaceDerefOr(btp.Spec.TargetRef.Namespace, btp.GetNamespace())
+			hr := &gatewayv1.HTTPRoute{}
+			if err := r.Client.Get(ctx, types.NamespacedName{
+				Namespace: ns,
+				Name:      string(btp.Spec.TargetRef.Name),
 			}, hr); err != nil {
 				if !k8serrors.IsNotFound(err) {
 					scopedLog.WithError(err).Error("Failed to get HTTPRoute")

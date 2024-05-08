@@ -307,6 +307,15 @@ type HTTPRoute struct {
 
 	// Timeout holds the timeout configuration for a route.
 	Timeout Timeout `json:"timeout,omitempty"`
+
+	Ratelimits *[]Ratelimit `json:"ratelimits,omitempty"`
+}
+
+type Ratelimit struct {
+	RequestHeader map[string]string
+	GenericKey *string
+	GenericValue *string
+	Limit int
 }
 
 type BackendHTTPFilter struct {

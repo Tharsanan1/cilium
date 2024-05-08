@@ -219,6 +219,60 @@ func NewAuthHTTPCluster(clusterName string, host string, port uint32, mutationFu
 	}, nil
 }
 
+// NewRLHTTPCluster creates a new Envoy cluster.
+func NewRLHTTPCluster(clusterName string, host string, port uint32, mutationFunc ...ClusterMutator) (ciliumv2.XDSResource, error) {
+	cluster := &envoy_config_cluster_v3.Cluster{
+		Name: clusterName,
+		ClusterDiscoveryType: &envoy_config_cluster_v3.Cluster_Type{
+			Type: envoy_config_cluster_v3.Cluster_STRICT_DNS,
+		},
+		DnsLookupFamily: envoy_config_cluster_v3.Cluster_V4_ONLY,
+		Http2ProtocolOptions: &corev3.Http2ProtocolOptions{},
+		LoadAssignment: &endpointv3.ClusterLoadAssignment{
+			ClusterName: clusterName,
+			Endpoints: []*endpointv3.LocalityLbEndpoints{
+				&endpointv3.LocalityLbEndpoints{
+					LbEndpoints: []*endpointv3.LbEndpoint{
+						&endpointv3.LbEndpoint{
+							HostIdentifier: &endpointv3.LbEndpoint_Endpoint{
+								Endpoint: &endpointv3.Endpoint{
+									Address: &corev3.Address{
+										Address: &corev3.Address_SocketAddress{
+											SocketAddress: &corev3.SocketAddress{
+												Address: host,
+												PortSpecifier: &corev3.SocketAddress_PortValue{
+													PortValue: port,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Apply mutation functions for customizing the cluster.
+	for _, fn := range mutationFunc {
+		cluster = fn(cluster)
+	}
+
+	clusterBytes, err := proto.Marshal(cluster)
+	if err != nil {
+		return ciliumv2.XDSResource{}, err
+	}
+
+	return ciliumv2.XDSResource{
+		Any: &anypb.Any{
+			TypeUrl: envoy.ClusterTypeURL,
+			Value:   clusterBytes,
+		},
+	}, nil
+}
+
 // NewTCPClusterWithDefaults same as NewTCPCluster but has default mutation functions applied.
 // currently this is only used for TLSRoutes to create a passthrough proxy
 func NewTCPClusterWithDefaults(clusterName string, clusterServiceName string, mutationFunc ...ClusterMutator) (ciliumv2.XDSResource, error) {

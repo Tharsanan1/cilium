@@ -41,6 +41,14 @@ func GetNamespacedAuthClusterName(sp *ciliumv2.SecurityPolicy, name string, name
 	return fmt.Sprintf("%s/%s/auth_%s_%s", namespace, name, sp.GetName(), sp.GetNamespace())
 }
 
+func GetNamespacedRLClusterName(name string, namespace string) string {
+	return fmt.Sprintf("%s/%s/%s", namespace, name, "ratelimit-cluster")
+}
+
+func GetNamespacedName(namespace, name string) string {
+	return fmt.Sprintf("%s/%s", namespace, name)
+}
+
 func IsService(be gatewayv1.BackendObjectReference) bool {
 	return (be.Kind == nil || *be.Kind == kindService) && (be.Group == nil || *be.Group == corev1.GroupName)
 }

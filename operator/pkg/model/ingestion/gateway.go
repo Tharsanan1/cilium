@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	k8helpers "github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
+	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	corev1 "k8s.io/api/core/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
@@ -24,14 +26,15 @@ const (
 
 // Input is the input for GatewayAPI.
 type Input struct {
-	GatewayClass    gatewayv1.GatewayClass
-	Gateway         gatewayv1.Gateway
-	HTTPRoutes      []gatewayv1.HTTPRoute
-	TLSRoutes       []gatewayv1alpha2.TLSRoute
-	GRPCRoutes      []gatewayv1alpha2.GRPCRoute
-	ReferenceGrants []gatewayv1beta1.ReferenceGrant
-	Services        []corev1.Service
-	ServiceImports  []mcsapiv1alpha1.ServiceImport
+	GatewayClass           gatewayv1.GatewayClass
+	Gateway                gatewayv1.Gateway
+	HTTPRoutes             []gatewayv1.HTTPRoute
+	TLSRoutes              []gatewayv1alpha2.TLSRoute
+	GRPCRoutes             []gatewayv1alpha2.GRPCRoute
+	ReferenceGrants        []gatewayv1beta1.ReferenceGrant
+	Services               []corev1.Service
+	ServiceImports         []mcsapiv1alpha1.ServiceImport
+	BackendTrafficPolicies *ciliumv2.BackendTrafficPolicyList
 }
 
 // GatewayAPI translates Gateway API resources into a model.
@@ -62,7 +65,7 @@ func GatewayAPI(input Input) ([]model.HTTPListener, []model.TLSListener) {
 		}
 
 		var httpRoutes []model.HTTPRoute
-		httpRoutes = append(httpRoutes, toHTTPRoutes(l, input.HTTPRoutes, input.Services, input.ServiceImports, input.ReferenceGrants)...)
+		httpRoutes = append(httpRoutes, toHTTPRoutes(l, input.HTTPRoutes, input.Services, input.ServiceImports, input.ReferenceGrants, &input.BackendTrafficPolicies.Items)...)
 		httpRoutes = append(httpRoutes, toGRPCRoutes(l, input.GRPCRoutes, input.Services, input.ServiceImports, input.ReferenceGrants)...)
 		resHTTP = append(resHTTP, model.HTTPListener{
 			Name: string(l.Name),
@@ -133,8 +136,23 @@ func getBackendServiceName(namespace string, services []corev1.Service, serviceI
 	return svcName, nil
 }
 
-func toHTTPRoutes(listener gatewayv1.Listener, input []gatewayv1.HTTPRoute, services []corev1.Service, serviceImports []mcsapiv1alpha1.ServiceImport, grants []gatewayv1beta1.ReferenceGrant) []model.HTTPRoute {
+func toHTTPRoutes(listener gatewayv1.Listener, input []gatewayv1.HTTPRoute, services []corev1.Service, serviceImports []mcsapiv1alpha1.ServiceImport, grants []gatewayv1beta1.ReferenceGrant, backendTrafficPolicies *[]ciliumv2.BackendTrafficPolicy) []model.HTTPRoute {
 	var httpRoutes []model.HTTPRoute
+	// gatewayRatelimit := make([]model.Ratelimit, 0)
+	// if backendTrafficPolicies != nil && len(*backendTrafficPolicies) > 0 {
+	// 	for _, btp := range *backendTrafficPolicies {
+	// 		if helpers.IsTargetRefGateway(btp.Spec.TargetRef) {
+	// 			if btp.Spec.RateLimit != nil && btp.Spec.RateLimit.Global != nil && len(btp.Spec.RateLimit.Global.Rules) > 0 {
+	// 				for _, rule := range btp.Spec.RateLimit.Global.Rules {
+	// 					rl := model.Ratelimit{}
+	// 					if len(rule.ClientSelectors) == 0 {
+	// 						key, value := helpers.GetGenericKeyForRL()
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 	for _, r := range input {
 		isListener := false
 		for _, parent := range r.Spec.ParentRefs {
@@ -256,7 +274,57 @@ func toHTTPRoutes(listener gatewayv1.Listener, input []gatewayv1.HTTPRoute, serv
 					Timeout:                toTimeout(rule.Timeouts),
 				})
 			}
+			ratelimits := []model.Ratelimit{}
+			// gatewayRatelimit := model.Ratelimit{}
+			if backendTrafficPolicies != nil && len(*backendTrafficPolicies) > 0 {
+				log.Infof("Not empty 1")
+				for _, btp := range *backendTrafficPolicies {
+					log.Infof("Not empty 2")
+					if helpers.IsTargetRefHTTPRoute(btp.Spec.TargetRef) {
+						log.Infof("Not empty 3")
+						ns := k8helpers.NamespaceDerefOr(btp.Spec.TargetRef.Namespace, btp.GetNamespace())
+						if string(btp.Spec.TargetRef.Name) == r.GetName() && ns == r.GetNamespace() {
+							log.Infof("Not empty 4")
+							if btp.Spec.RateLimit != nil && btp.Spec.RateLimit.Global != nil {
+								log.Infof("Not empty 5")
+								for index, rule := range btp.Spec.RateLimit.Global.Rules {
+									rl := model.Ratelimit{}
+									if len(rule.ClientSelectors) == 0 {
+										key, value := model.GetRatelimitKeyAndValueForHttprouteRL(r.GetNamespace(), r.GetName(), btp.GetName(), btp.GetNamespace(), index)
+										rl.GenericKey = &key
+										rl.GenericValue = &value
+										ratelimits = append(ratelimits, rl)
+										log.Infof("Not empty 6")
+									} else {
+										headerRlMap := map[string]string{}
+										for indexCS, cs := range rule.ClientSelectors {
+											if len(cs.Headers) > 0 {
+												for indexHeader, header := range cs.Headers {
+													key := model.GetRatelimitKeyForHttprouteHeaderRl(r.GetNamespace(), r.GetName(), btp.GetName(), btp.GetNamespace(), indexHeader, indexCS, header.Name)
+													if header.Value != nil {
+														headerRlMap[key] = header.Name
+													} else {
+														headerRlMap[key] = ""
+													}
+													log.Infof("Not empty 7")
+												}
+											}
+										}
+										rl.RequestHeader = headerRlMap
+										if len(headerRlMap) > 0 {
+											ratelimits = append(ratelimits, rl)
+										}
+									}
+								}
+							}
+						}
+					}
+					//  else if helpers.IsTargetRefGateway(btp.Spec.TargetRef) {
 
+					// }
+				}
+			}
+			log.Infof("preared rls:  %+v", ratelimits)
 			for _, match := range rule.Matches {
 				httpRoutes = append(httpRoutes, model.HTTPRoute{
 					Hostnames:              computedHost,
@@ -273,6 +341,7 @@ func toHTTPRoutes(listener gatewayv1.Listener, input []gatewayv1.HTTPRoute, serv
 					Rewrite:                rewriteFilter,
 					RequestMirrors:         requestMirrors,
 					Timeout:                toTimeout(rule.Timeouts),
+					Ratelimits:             &ratelimits,
 				})
 			}
 		}

@@ -223,7 +223,9 @@ func envoyHTTPRoutes(httpRoutes []model.HTTPRoute, hostnames []string, hostNameS
 
 		if hRoutes[0].RequestRedirect != nil {
 			route.Action = getRouteRedirect(hRoutes[0].RequestRedirect, listenerPort)
+			log.Infof("request redirect identified")
 		} else {
+			log.Infof("correct path 1: rl : %s , %+v", r.Name, *r.Ratelimits)
 			route.Action = getRouteAction(&r, backends, r.BackendHTTPFilters, r.Rewrite, r.RequestMirrors)
 		}
 		// If there is only one backend, we can add the header filter to the route
@@ -334,6 +336,46 @@ func timeoutMutation(backend *time.Duration, request *time.Duration) routeAction
 func getRouteAction(route *model.HTTPRoute, backends []model.Backend, backendHTTPFilter []*model.BackendHTTPFilter, rewrite *model.HTTPURLRewriteFilter, mirrors []*model.HTTPRequestMirror) *envoy_config_route_v3.Route_Route {
 	var routeAction *envoy_config_route_v3.Route_Route
 
+	routeActionRLs := make([]*envoy_config_route_v3.RateLimit, 0)
+	if route.Ratelimits != nil && len(*route.Ratelimits) > 0 {
+		log.Infof("rl not empty")
+		for _, rl := range *route.Ratelimits {
+			log.Infof("rl not empty 1")
+			erl := &envoy_config_route_v3.RateLimit{}
+			erlActions := []*envoy_config_route_v3.RateLimit_Action{}
+			if len(rl.RequestHeader) > 0 {
+				log.Infof("rl not empty 2")
+				for key , header := range rl.RequestHeader {
+					log.Infof("rl not empty 3")
+					erlAction := envoy_config_route_v3.RateLimit_Action{}
+					erlActionRequestHeaders := envoy_config_route_v3.RateLimit_Action_RequestHeaders{
+						DescriptorKey: key,
+					}
+					if header != "" {
+						erlActionRequestHeaders.HeaderName = header
+					}
+					erlAction.ActionSpecifier = &envoy_config_route_v3.RateLimit_Action_RequestHeaders_{RequestHeaders: &erlActionRequestHeaders}
+					erlActions = append(erlActions, &erlAction)
+				}
+			}
+			if rl.GenericKey != nil && rl.GenericValue != nil {
+				log.Infof("rl not empty 4")
+				erlAction := envoy_config_route_v3.RateLimit_Action{}
+				erlActionGenericKey := envoy_config_route_v3.RateLimit_Action_GenericKey{
+					DescriptorKey: *rl.GenericKey,
+					DescriptorValue: *rl.GenericValue,
+				}
+				erlAction.ActionSpecifier = &envoy_config_route_v3.RateLimit_Action_GenericKey_{GenericKey: &erlActionGenericKey}
+				erlActions = append(erlActions, &erlAction)
+			}
+			if len(erlActions) > 0 {
+				log.Infof("rl not empty 5")
+				erl.Actions = erlActions
+				routeActionRLs = append(routeActionRLs, erl)
+			}
+		}
+	}
+
 	mutators := []routeActionMutation{
 		hostRewriteMutation(rewrite),
 		pathPrefixMutation(rewrite, route),
@@ -348,6 +390,7 @@ func getRouteAction(route *model.HTTPRoute, backends []model.Backend, backendHTT
 				ClusterSpecifier: &envoy_config_route_v3.RouteAction_Cluster{
 					Cluster: getClusterName(backends[0].Namespace, backends[0].Name, backends[0].Port.GetPort()),
 				},
+				RateLimits: routeActionRLs,
 			},
 		}
 
@@ -379,6 +422,7 @@ func getRouteAction(route *model.HTTPRoute, backends []model.Backend, backendHTT
 		}
 		weightedClusters = append(weightedClusters, clusterWeight)
 	}
+	
 	routeAction = &envoy_config_route_v3.Route_Route{
 		Route: &envoy_config_route_v3.RouteAction{
 			ClusterSpecifier: &envoy_config_route_v3.RouteAction_WeightedClusters{
@@ -386,11 +430,14 @@ func getRouteAction(route *model.HTTPRoute, backends []model.Backend, backendHTT
 					Clusters: weightedClusters,
 				},
 			},
+			RateLimits: routeActionRLs,
 		},
 	}
+	log.Infof("Route action: %+v", *routeAction.Route)
 	for _, mutator := range mutators {
 		routeAction = mutator(routeAction)
 	}
+	log.Infof("Route action: %+v", *routeAction.Route)
 	return routeAction
 }
 

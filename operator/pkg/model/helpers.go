@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	allHosts = "*"
+	allHosts   = "*"
+	genericKey = "generic-key"
 )
 
 func AddSource(sourceList []FullyQualifiedResource, source FullyQualifiedResource) []FullyQualifiedResource {
@@ -125,4 +126,12 @@ func encodeHash(hex string) string {
 // hash hashes `data` with sha256 and returns the hex string
 func hash(data string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(data)))
+}
+
+func GetRatelimitKeyAndValueForHttprouteRL(httpRouteName string, httpRouteNamespace string, btpName string, btpNamespace string, ruleIndex int) (string, string) {
+	return genericKey, fmt.Sprintf("rl-%s-%s-%s-%s-%d", btpNamespace, btpName, httpRouteNamespace, httpRouteName, ruleIndex)
+}
+
+func GetRatelimitKeyForHttprouteHeaderRl(httpRouteName string, httpRouteNamespace string, btpName string, btpNamespace string, selectorIndex int, headerIndex int, headerName string) string {
+	return fmt.Sprintf("rl-%s-%s-%s-%s-%d-%d-%s", btpNamespace, btpName, httpRouteNamespace, httpRouteName, selectorIndex, headerIndex, headerName)
 }
