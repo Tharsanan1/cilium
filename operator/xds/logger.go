@@ -2,11 +2,18 @@ package xds
 
 import (
 	"log"
+	"github.com/cilium/cilium/pkg/logging"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
+const (
+	Subsys = "gateway-xds"
+)
 type Logger struct {
 	Debug bool
 }
+
+var cilium_log = logging.DefaultLogger.WithField(logfields.LogSubsys, Subsys)
 
 func (logger Logger) Debugf(format string, args ...interface{}) {
 	if logger.Debug {

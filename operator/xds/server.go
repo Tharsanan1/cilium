@@ -9,9 +9,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 
-	envoy_discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	envoy_server "github.com/envoyproxy/go-control-plane/pkg/server/v3"
-	envoy_test "github.com/envoyproxy/go-control-plane/pkg/test/v3"
+	c_discovery "github.com/cilium/proxy/go/envoy/service/discovery/v3"
+	envoy_server "github.com/cilium/proxy/go/pkg/server/v3"
+	envoy_test "github.com/cilium/proxy/go/pkg/test/v3"
+	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 )
 
 const (
@@ -21,12 +22,28 @@ const (
 	grpcMaxConcurrentStreams = 1000000
 )
 
+var (
+	gatewayRLeventChannel *(chan *GatewayRLEvent)
+)
+
+func init() {
+	gatewayRLeventChannelObj := (make(chan *GatewayRLEvent, 10))
+	gatewayRLeventChannel = &gatewayRLeventChannelObj
+}
+
+type GatewayRLEvent struct {
+	Name string
+	Namespace string
+	BackendTrafficPolicies ciliumv2.BackendTrafficPolicyList
+}
+
 // RunServer starts an xDS server at the given port.
 func RunServer() {
 	logger := Logger{}
 	cb := &envoy_test.Callbacks{Debug: logger.Debug}
 	rateLimiterCache := GetRateLimiterCache()
 	srv := envoy_server.NewServer(context.Background(), rateLimiterCache, cb)
+
 	port := 18000
 	grpcServer := grpc.NewServer(
 		grpc.MaxConcurrentStreams(grpcMaxConcurrentStreams),
@@ -45,7 +62,8 @@ func RunServer() {
 		log.Fatal(err)
 	}
 
-	envoy_discovery.RegisterAggregatedDiscoveryServiceServer(grpcServer, srv)
+	// envoy_discovery.RegisterAggregatedDiscoveryServiceServer(grpcServer, srv)
+	c_discovery.RegisterAggregatedDiscoveryServiceServer(grpcServer, srv)
 
 	log.Printf("Management server listening on %d\n", port)
 	go func() {
@@ -53,5 +71,15 @@ func RunServer() {
 			log.Fatalf("Error while starting grpc server. Error %+v", err)
 		}
 	}()
-	rlsPolicyCache.SetEmptySnapshot("Label1")
+	rlsPolicyCache.SetEmptySnapshot("node1")
+	go func() {
+		for event := range *gatewayRLeventChannel {
+			ProcessEvent(event)
+		}
+	}()
+
+}
+
+func GetGatewayRLChannel() *chan *GatewayRLEvent {
+	return gatewayRLeventChannel
 }

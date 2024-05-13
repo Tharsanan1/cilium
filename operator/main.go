@@ -5,13 +5,13 @@ package main
 
 import (
 	"github.com/cilium/cilium/operator/cmd"
-	// "github.com/cilium/cilium/operator/xds"
+	"github.com/cilium/cilium/operator/xds"
 	"github.com/cilium/cilium/pkg/hive"
 )
 
 func main() {
 	operatorHive := hive.New(cmd.Operator)
-
+	go xds.RunServer()
 	cmd.Execute(cmd.NewOperatorCmd(operatorHive))
-	// go xds.RunServer()
+	
 }

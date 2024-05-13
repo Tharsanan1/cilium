@@ -24,11 +24,12 @@ import (
 
 	controllerruntime "github.com/cilium/cilium/operator/pkg/controller-runtime"
 	"github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
+	k8helpers "github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/operator/pkg/model/ingestion"
+	"github.com/cilium/cilium/operator/xds"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/logging/logfields"
-	k8helpers "github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 )
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -148,7 +149,11 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
 	}
 
-	
+	*xds.GetGatewayRLChannel() <- &xds.GatewayRLEvent{
+		Name: original.GetName(),
+		Namespace: original.GetNamespace(),
+		BackendTrafficPolicies: *backendTrafficPolicyList,
+	}
 
 	security := prepareSecurity(original, securityPolicyList, r.filterHTTPRoutesByGateway(ctx, gw, httpRouteList.Items))
 

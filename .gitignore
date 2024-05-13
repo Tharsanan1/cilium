@@ -123,3 +123,5 @@ bpf/.cache
 # Files used for direnv
 .direnv
 .envrc
+
+cilium-1.15.4

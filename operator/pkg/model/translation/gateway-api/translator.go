@@ -19,9 +19,9 @@ import (
 var _ translation.Translator = (*gatewayAPITranslator)(nil)
 
 const (
-	ciliumGatewayPrefix = "cilium-gateway-"
 	owningGatewayLabel  = "io.cilium.gateway/owning-gateway"
 )
+
 
 type gatewayAPITranslator struct {
 	cecTranslator translation.CECTranslator
@@ -54,7 +54,7 @@ func (t *gatewayAPITranslator) Translate(m *model.Model) (*ciliumv2.CiliumEnvoyC
 		return nil, nil, nil, fmt.Errorf("model source name can't be empty")
 	}
 
-	cec, err := t.cecTranslator.Translate(source.Namespace, ciliumGatewayPrefix+source.Name, m)
+	cec, err := t.cecTranslator.Translate(source.Namespace, translation.CiliumGatewayPrefix+source.Name, m)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -104,7 +104,7 @@ func getService(resource *model.FullyQualifiedResource, allPorts []uint32, label
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        model.Shorten(ciliumGatewayPrefix + resource.Name),
+			Name:        model.Shorten(translation.CiliumGatewayPrefix + resource.Name),
 			Namespace:   resource.Namespace,
 			Labels:      mergeMap(map[string]string{owningGatewayLabel: model.Shorten(resource.Name)}, labels),
 			Annotations: annotations,
@@ -128,7 +128,7 @@ func getService(resource *model.FullyQualifiedResource, allPorts []uint32, label
 func getEndpoints(resource model.FullyQualifiedResource) *corev1.Endpoints {
 	return &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      model.Shorten(ciliumGatewayPrefix + resource.Name),
+			Name:      model.Shorten(translation.CiliumGatewayPrefix + resource.Name),
 			Namespace: resource.Namespace,
 			Labels:    map[string]string{owningGatewayLabel: model.Shorten(resource.Name)},
 			OwnerReferences: []metav1.OwnerReference{

@@ -8,30 +8,30 @@ import (
 	"fmt"
 	goslices "slices"
 	"syscall"
-
-	corev3 "github.com/cilium/proxy/go/envoy/config/core/v3"
-	envoy_config_core_v3 "github.com/cilium/proxy/go/envoy/config/core/v3"
-	envoy_config_listener "github.com/cilium/proxy/go/envoy/config/listener/v3"
-	routev3 "github.com/cilium/proxy/go/envoy/config/route/v3"
-	httpJWTAuthFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/jwt_authn/v3"
-	ratelimitFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/ratelimit/v3"
-	rlV3 "github.com/cilium/proxy/go/envoy/config/ratelimit/v3"
-	envoy_extensions_listener_proxy_protocol_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/proxy_protocol/v3"
-	envoy_extensions_listener_tls_inspector_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/tls_inspector/v3"
-	httpConnectionManagerv3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/http_connection_manager/v3"
-	envoy_extensions_filters_network_tcp_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/tcp_proxy/v3"
-	envoy_extensions_transport_sockets_tls_v3 "github.com/cilium/proxy/go/envoy/extensions/transport_sockets/tls/v3"
-	"golang.org/x/exp/maps"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	"strings"
 
 	"github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/pkg/envoy"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/slices"
+	corev3 "github.com/cilium/proxy/go/envoy/config/core/v3"
+	envoy_config_core_v3 "github.com/cilium/proxy/go/envoy/config/core/v3"
+	envoy_config_listener "github.com/cilium/proxy/go/envoy/config/listener/v3"
+	rlV3 "github.com/cilium/proxy/go/envoy/config/ratelimit/v3"
+	routev3 "github.com/cilium/proxy/go/envoy/config/route/v3"
+	httpJWTAuthFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/jwt_authn/v3"
+	ratelimitFilter "github.com/cilium/proxy/go/envoy/extensions/filters/http/ratelimit/v3"
+	envoy_extensions_listener_proxy_protocol_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/proxy_protocol/v3"
+	envoy_extensions_listener_tls_inspector_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/listener/tls_inspector/v3"
+	httpConnectionManagerv3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/http_connection_manager/v3"
+	envoy_extensions_filters_network_tcp_v3 "github.com/cilium/proxy/go/envoy/extensions/filters/network/tcp_proxy/v3"
+	envoy_extensions_transport_sockets_tls_v3 "github.com/cilium/proxy/go/envoy/extensions/transport_sockets/tls/v3"
 	v32 "github.com/cilium/proxy/go/envoy/type/matcher/v3"
+	"golang.org/x/exp/maps"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -51,6 +51,11 @@ const (
 
 	rawBufferTransportProtocol = "raw_buffer"
 	tlsTransportProtocol       = "tls"
+)
+
+
+const (
+	CiliumGatewayPrefix = "cilium-gateway-"
 )
 
 type ListenerMutator func(*envoy_config_listener.Listener) *envoy_config_listener.Listener
@@ -217,6 +222,11 @@ func WithAuthFilter(m *model.Model) ListenerMutator {
 	}
 }
 
+
+func removeCiliumGatewayPrefix(target string) string {
+	return strings.TrimPrefix(target, CiliumGatewayPrefix)
+}
+
 func WithRLFilter(m *model.Model) ListenerMutator {
 	return func(listener *envoy_config_listener.Listener) *envoy_config_listener.Listener {
 		for _, filterChain := range listener.FilterChains {
@@ -240,7 +250,7 @@ func WithRLFilter(m *model.Model) ListenerMutator {
 							Name: "envoy.filters.http.ratelimit",
 							ConfigType: &httpConnectionManagerv3.HttpFilter_TypedConfig{
 								TypedConfig: toAny(&ratelimitFilter.RateLimit{	
-									Domain: "app",
+									Domain: removeCiliumGatewayPrefix(fmt.Sprintf("%s-%s",m.Name, m.Namespace)),
 									FailureModeDeny: true,
 									// RequestType: "external",
 									Stage: 0,
