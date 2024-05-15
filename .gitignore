@@ -124,4 +124,4 @@ bpf/.cache
 .direnv
 .envrc
 
-cilium-1.15.4
+# cilium-1.15.4

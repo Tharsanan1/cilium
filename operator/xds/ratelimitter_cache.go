@@ -155,9 +155,13 @@ func ProcessEvent(event *GatewayRLEvent) {
 						rls.Descriptors = append(rls.Descriptors, descriptor)
 						var lastDescriptor *rls_config.RateLimitDescriptor
 						for indexCS, cs := range rule.ClientSelectors {
+							cilium_log.Infof("Gonna set 22222222222222222222")
 							if len(cs.Headers) > 0 {
+								cilium_log.Infof("Gonna set 1111111111111111111")
 								for indexHeader, header := range cs.Headers {
+									cilium_log.Infof("Gonna set")
 									key := model.GetRatelimitKeyForHttprouteHeaderRl(ns, string(btp.Spec.TargetRef.Name), btp.GetName(), btp.GetNamespace(), indexHeader, indexCS, header.Name)
+									lastDescriptor = descriptor
 									if header.Value != nil {
 										descriptor.Key = key
 										descriptor.Value = *header.Value
@@ -166,6 +170,8 @@ func ProcessEvent(event *GatewayRLEvent) {
 											descriptorNew,
 										}
 										descriptor = descriptorNew
+
+										cilium_log.Infof("Gonna set done")
 									} else {
 										descriptor.Key = key
 										descriptorNew :=  &rls_config.RateLimitDescriptor{}
@@ -173,14 +179,19 @@ func ProcessEvent(event *GatewayRLEvent) {
 											descriptorNew,
 										}
 										descriptor = descriptorNew
+
+										cilium_log.Infof("Gonna set done")
 									}
-									lastDescriptor = descriptor
 								}
 							}
 						}
-						descriptor.RateLimit = rateLimit
+						lastDescriptor.RateLimit = rateLimit
 						// Delete last descriptor list
 						lastDescriptor.Descriptors = []*rls_config.RateLimitDescriptor{}
+						for _, desc := range rls.Descriptors{
+							cilium_log.Infof("Descriptor: %+v", *desc)
+						}
+						
 					}
 				}
 			}

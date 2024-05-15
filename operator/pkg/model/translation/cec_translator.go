@@ -245,7 +245,7 @@ func (i *cecTranslator) getEnvoyHTTPRouteConfiguration(m *model.Model) []ciliumv
 
 	for _, l := range m.HTTP {
 		for _, r := range l.Routes {
-			log.Infof("inside for loop r : %s , %+v", r.Name, *r.Ratelimits)
+			log.Infof("inside for loop r : %s , %+v", r.PathMatch, *r.Ratelimits)
 			port := insecureHost
 			if l.TLS != nil {
 				port = secureHost

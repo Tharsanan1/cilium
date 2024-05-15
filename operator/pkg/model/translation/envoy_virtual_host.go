@@ -225,7 +225,7 @@ func envoyHTTPRoutes(httpRoutes []model.HTTPRoute, hostnames []string, hostNameS
 			route.Action = getRouteRedirect(hRoutes[0].RequestRedirect, listenerPort)
 			log.Infof("request redirect identified")
 		} else {
-			log.Infof("correct path 1: rl : %s , %+v", r.Name, *r.Ratelimits)
+			log.Infof("correct path 1: rl : %s , %+v", r.PathMatch, *r.Ratelimits)
 			route.Action = getRouteAction(&r, backends, r.BackendHTTPFilters, r.Rewrite, r.RequestMirrors)
 		}
 		// If there is only one backend, we can add the header filter to the route
