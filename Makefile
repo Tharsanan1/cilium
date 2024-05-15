@@ -575,43 +575,56 @@ run-builder: ## Drop into a shell inside a container running the cilium-builder 
 
 
 TOKEN=$(shell curl -s -X POST https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/token -d "client_id=service&username=demo&password=abcd1234&grant_type=password" | jq -r '.access_token')
+external_ip=$(shell kubectl get svc cilium-gateway-my-gateway -o=jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 install-cilium-with-auth-rl:
 	cd cilium-1.15.4/cilium && helm install cilium -n kube-system .
+	echo "Waiting for deployments to be ready"
+	-kubectl wait --for=condition=ready pod -l name=cilium-operator -n kube-system --timeout=300s
+	-kubectl wait --for=condition=ready pod -l app=ratelimit -n kube-system --timeout=300s
+	-kubectl wait --for=condition=ready pod -l app=redis -n kube-system --timeout=300s
+	-kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=300s
+	# Cilium is ready handle authentications and ratelimits go ahead and tryout.....
 
 setup-with-auth:
 	-kubectl apply -f try-out/resources.yaml
 	-kubectl apply -f try-out/securitypolicy-cr.yaml
 	-kubectl delete -f try-out/btp.yaml
+	echo "Waiting for deployments to be ready"
+	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
 test-without-auth-header:
-	-curl http://10.108.14.162/details/21 -I
+	-curl http://$(external_ip)/details/21 -I
 
 test-with-auth-header:
-	-curl http://10.108.14.162/details/21 -I --header "Authorization: Bearer $(TOKEN)"
+	-curl http://$(external_ip)/details/21 -I --header "Authorization: Bearer $(TOKEN)"
 
 setup-with-rate-limit:
 	-kubectl apply -f try-out/resources.yaml
 	-kubectl delete -f try-out/securitypolicy-cr.yaml
 	-kubectl apply -f try-out/btp.yaml
+	echo "Waiting for deployments to be ready"
+	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
 setup-with-rate-limit-and-auth:
 	-kubectl apply -f try-out/resources.yaml
 	-kubectl apply -f try-out/securitypolicy-cr.yaml
 	-kubectl apply -f try-out/btp.yaml
+	echo "Waiting for deployments to be ready"
+	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
 test-with-rate-limit-with-auth-header:
-	-curl http://10.108.14.162/details/21 -I --header "Authorization: Bearer $(TOKEN)" --header "x-user-id-1:one"  --header "x-user-id:one"
+	-curl http://$(external_ip)/details/21 -I --header "Authorization: Bearer $(TOKEN)" --header "x-user-id-1:one"  --header "x-user-id:one"
 
 test-with-rate-limit-custom-headers:
-	-curl http://10.108.14.162/details/21 -I
-	-curl http://10.108.14.162/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
-	-curl http://10.108.14.162/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
-	-curl http://10.108.14.162/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
-	-curl http://10.108.14.162/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
+	-curl http://$(external_ip)/details/21 -I
+	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
+	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
+	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
+	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
 
 test-with-simple-rate-limit:
-	-curl http://10.108.14.162/simple/21 -I 
-	-curl http://10.108.14.162/simple/21 -I  
-	-curl http://10.108.14.162/simple/21 -I 
-	-curl http://10.108.14.162/simple/21 -I 
+	-curl http://$(external_ip)/simple/21 -I 
+	-curl http://$(external_ip)/simple/21 -I  
+	-curl http://$(external_ip)/simple/21 -I 
+	-curl http://$(external_ip)/simple/21 -I 
