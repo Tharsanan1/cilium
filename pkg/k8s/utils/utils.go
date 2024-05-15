@@ -7,6 +7,8 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"net/url"
+  "strconv"
 
 	v1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -269,4 +271,29 @@ func StripPodSpecialLabels(labels map[string]string) map[string]string {
 // joinPath mimics JoinPath from pkg/policy/utils, which could not be imported here due to circular dependency
 func joinPath(a, b string) string {
 	return a + labelsPkg.PathDelimiter + b
+}
+
+// ExtractHostAndPort extracts host and port from a URI.
+// If the URI does not have a port, it defaults to 443 for HTTPS and 80 for HTTP.
+func ExtractHostAndPort(uri string) (string, uint32) {
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return "", 0
+	}
+	host := parsedURL.Hostname()
+	var port uint32
+	if parsedURL.Port() != "" {
+		p, err := strconv.ParseUint(parsedURL.Port(), 10, 32)
+		if err != nil {
+			return "", 0
+		}
+		port = uint32(p)
+	} else {
+		if parsedURL.Scheme == "https" {
+			port = 443
+		} else {
+			port = 80
+		}
+	}
+	return host, port
 }

@@ -5,8 +5,11 @@ package translation
 
 import (
 	envoy_config_cluster_v3 "github.com/cilium/proxy/go/envoy/config/cluster/v3"
+	corev3 "github.com/cilium/proxy/go/envoy/config/core/v3"
 	envoy_config_core_v3 "github.com/cilium/proxy/go/envoy/config/core/v3"
+	endpointv3 "github.com/cilium/proxy/go/envoy/config/endpoint/v3"
 	envoy_upstreams_http_v3 "github.com/cilium/proxy/go/envoy/extensions/upstreams/http/v3"
+	envoy_extensions_transport_sockets_tls_v3 "github.com/cilium/proxy/go/envoy/extensions/transport_sockets/tls/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -136,6 +139,119 @@ func NewHTTPCluster(clusterName string, clusterServiceName string, mutationFunc 
 		},
 		EdsClusterConfig: &envoy_config_cluster_v3.Cluster_EdsClusterConfig{
 			ServiceName: clusterServiceName,
+		},
+	}
+
+	// Apply mutation functions for customizing the cluster.
+	for _, fn := range mutationFunc {
+		cluster = fn(cluster)
+	}
+
+	clusterBytes, err := proto.Marshal(cluster)
+	if err != nil {
+		return ciliumv2.XDSResource{}, err
+	}
+
+	return ciliumv2.XDSResource{
+		Any: &anypb.Any{
+			TypeUrl: envoy.ClusterTypeURL,
+			Value:   clusterBytes,
+		},
+	}, nil
+}
+
+// NewAuthHTTPCluster creates a new Envoy cluster.
+func NewAuthHTTPCluster(clusterName string, host string, port uint32, mutationFunc ...ClusterMutator) (ciliumv2.XDSResource, error) {
+	cluster := &envoy_config_cluster_v3.Cluster{
+		Name: clusterName,
+		ClusterDiscoveryType: &envoy_config_cluster_v3.Cluster_Type{
+			Type: envoy_config_cluster_v3.Cluster_LOGICAL_DNS,
+		},
+		DnsLookupFamily: envoy_config_cluster_v3.Cluster_V4_ONLY,
+		LoadAssignment: &endpointv3.ClusterLoadAssignment{
+			ClusterName: clusterName,
+			Endpoints: []*endpointv3.LocalityLbEndpoints{
+				&endpointv3.LocalityLbEndpoints{
+					LbEndpoints: []*endpointv3.LbEndpoint{
+						&endpointv3.LbEndpoint{
+							HostIdentifier: &endpointv3.LbEndpoint_Endpoint{
+								Endpoint: &endpointv3.Endpoint{
+									Address: &corev3.Address{
+										Address: &corev3.Address_SocketAddress{
+											SocketAddress: &corev3.SocketAddress{
+												Address: host,
+												PortSpecifier: &corev3.SocketAddress_PortValue{
+													PortValue: port,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		TransportSocket: &corev3.TransportSocket{
+			Name: "envoy.transport_sockets.tls",
+				ConfigType: &envoy_config_core_v3.TransportSocket_TypedConfig{
+				TypedConfig: toAny(&envoy_extensions_transport_sockets_tls_v3.UpstreamTlsContext{}),
+			},
+		},
+	}
+
+	// Apply mutation functions for customizing the cluster.
+	for _, fn := range mutationFunc {
+		cluster = fn(cluster)
+	}
+
+	clusterBytes, err := proto.Marshal(cluster)
+	if err != nil {
+		return ciliumv2.XDSResource{}, err
+	}
+
+	return ciliumv2.XDSResource{
+		Any: &anypb.Any{
+			TypeUrl: envoy.ClusterTypeURL,
+			Value:   clusterBytes,
+		},
+	}, nil
+}
+
+// NewRLHTTPCluster creates a new Envoy cluster.
+func NewRLHTTPCluster(clusterName string, host string, port uint32, mutationFunc ...ClusterMutator) (ciliumv2.XDSResource, error) {
+	cluster := &envoy_config_cluster_v3.Cluster{
+		Name: clusterName,
+		ClusterDiscoveryType: &envoy_config_cluster_v3.Cluster_Type{
+			Type: envoy_config_cluster_v3.Cluster_STRICT_DNS,
+		},
+		DnsLookupFamily: envoy_config_cluster_v3.Cluster_V4_ONLY,
+		Http2ProtocolOptions: &corev3.Http2ProtocolOptions{},
+		LoadAssignment: &endpointv3.ClusterLoadAssignment{
+			ClusterName: clusterName,
+			Endpoints: []*endpointv3.LocalityLbEndpoints{
+				&endpointv3.LocalityLbEndpoints{
+					LbEndpoints: []*endpointv3.LbEndpoint{
+						&endpointv3.LbEndpoint{
+							HostIdentifier: &endpointv3.LbEndpoint_Endpoint{
+								Endpoint: &endpointv3.Endpoint{
+									Address: &corev3.Address{
+										Address: &corev3.Address_SocketAddress{
+											SocketAddress: &corev3.SocketAddress{
+												Address: host,
+												PortSpecifier: &corev3.SocketAddress_PortValue{
+													PortValue: port,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 

@@ -1,0 +1,62 @@
+apiVersion: cilium.io/v2
+kind: BackendTrafficPolicy 
+metadata:
+  name: policy-httproute
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-app-1
+  rateLimit:
+    type: Global
+    global:
+      rules:
+      - limit:
+          requests: 2
+          unit: Minute
+        clientSelectors:
+        - headers:
+          - name: x-user-id
+            value: one
+          - name: x-user-id-1
+            value: one
+---
+apiVersion: cilium.io/v2
+kind: BackendTrafficPolicy 
+metadata:
+  name: policy-httproute-3
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-app-3
+  rateLimit:
+    type: Global
+    global:
+      rules:
+      - limit:
+          requests: 2
+          unit: Minute
+---
+apiVersion: cilium.io/v2
+kind: BackendTrafficPolicy 
+metadata:
+  name: policy-httproute-1
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-app-2
+  rateLimit:
+    type: Global
+    global:
+      rules:
+      - limit:
+          requests: 200
+          unit: Minute
+        clientSelectors:
+        - headers:
+          - name: x-user-id
+            value: one
+          - name: x-user-id-1
+            value: one

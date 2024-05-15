@@ -5,6 +5,8 @@
 
 package v2
 
+type BackendTrafficPolicyExpansion interface{}
+
 type CiliumClusterwideEnvoyConfigExpansion interface{}
 
 type CiliumClusterwideNetworkPolicyExpansion interface{}

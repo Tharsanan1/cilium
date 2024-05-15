@@ -1,0 +1,47 @@
+apiVersion: cilium.io/v2
+kind: SecurityPolicy
+metadata:
+  name: my-security-policy
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-app-1
+  jwt:
+    providers:
+    - name: my-jwt-provider
+      issuer: https://auth.funnel-labs.io/auth/realms/funnel
+      remoteJWKS:
+        uri: https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/certs
+---
+apiVersion: cilium.io/v2
+kind: SecurityPolicy
+metadata:
+  name: my-security-policy-1
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-app-2
+  jwt:
+    providers:
+    - name: my-jwt-provider-1
+      issuer: https://auth.funnel-labs.io/auth/realms/funnel
+      remoteJWKS:
+        uri: https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/certs
+---
+# apiVersion: cilium.io/v2
+# kind: SecurityPolicy
+# metadata:
+#   name: my-security-policy-1
+# spec:
+#   targetRef:
+#     group: gateway.networking.k8s.io
+#     kind: Gateway
+#     name: my-gateway
+#   jwt:
+#     providers:
+#     - name: my-jwt-provider
+#       issuer: https://auth.funnel-labs.io/auth/realms/funnel
+#       remoteJWKS:
+#         uri: https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/certs

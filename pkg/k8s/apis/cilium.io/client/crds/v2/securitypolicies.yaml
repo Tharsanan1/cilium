@@ -11,7 +11,6 @@ spec:
   names:
     categories:
     - cilium
-    - ciliumpolicy
     kind: SecurityPolicy
     listKind: SecurityPolicyList
     plural: securitypolicies
@@ -21,10 +20,8 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.conditions[?(@.type=="Accepted")].reason
-      name: Status
-      type: string
-    - jsonPath: .metadata.creationTimestamp
+    - description: The age of the identity
+      jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v2
@@ -238,13 +235,6 @@ spec:
                 - kind
                 - name
                 type: object
-                x-kubernetes-validations:
-                - message: this policy can only have a targetRef.group of gateway.networking.k8s.io
-                  rule: self.group == 'gateway.networking.k8s.io'
-                - message: this policy can only have a targetRef.kind of Gateway/HTTPRoute/GRPCRoute
-                  rule: self.kind in ['Gateway', 'HTTPRoute', 'GRPCRoute']
-                - message: this policy does not yet support the sectionName field
-                  rule: '!has(self.sectionName)'
             required:
             - targetRef
             type: object
@@ -529,8 +519,7 @@ spec:
         type: object
     served: true
     storage: true
-    subresources:
-      status: {}
+    subresources: {}
 status:
   acceptedNames:
     kind: ""

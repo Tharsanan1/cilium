@@ -97,6 +97,9 @@ const (
 
 	// SPCRDName is the full name of the SecurityPolicy CRD.
 	SPCRDName = k8sconstv2.SPKindDefinition + "/" + k8sconstv2.CustomResourceDefinitionVersion
+
+	// BTPCRDName is the full name of the BackendTrafficPolicy CRD.
+	BTPCRDName = k8sconstv2.BTPKindDefinition + "/" + k8sconstv2.CustomResourceDefinitionVersion
 )
 
 // log is the k8s package logger object.
@@ -202,6 +205,10 @@ func CustomResourceDefinitionList() map[string]*CRDList {
 			Name:     SPCRDName,
 			FullName: k8sconstv2.SPName,
 		},
+		synced.CRDResourceName(k8sconstv2.BTPName): {
+			Name:     BTPCRDName,
+			FullName: k8sconstv2.BTPName,
+		},
 	}
 }
 
@@ -294,6 +301,9 @@ var (
 
 	//go:embed crds/v2/securitypolicies.yaml
 	crdsv2SecurityPolicies []byte
+
+	//go:embed crds/v2/backendtrafficpolicies.yaml
+	crdsv2BackendTrafficPolicies []byte
 )
 
 // GetPregeneratedCRD returns the pregenerated CRD based on the requested CRD
@@ -355,6 +365,8 @@ func GetPregeneratedCRD(crdName string) apiextensionsv1.CustomResourceDefinition
 		crdBytes = crdsv2Alpha1CiliumPodIPPools
 	case SPCRDName:
 		crdBytes = crdsv2SecurityPolicies
+	case BTPCRDName:
+		crdBytes = crdsv2BackendTrafficPolicies
 	default:
 		scopedLog.Fatal("Pregenerated CRD does not exist")
 	}

@@ -24,8 +24,10 @@ import (
 
 	controllerruntime "github.com/cilium/cilium/operator/pkg/controller-runtime"
 	"github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
+	k8helpers "github.com/cilium/cilium/operator/pkg/gateway-api/helpers"
 	"github.com/cilium/cilium/operator/pkg/model"
 	"github.com/cilium/cilium/operator/pkg/model/ingestion"
+	"github.com/cilium/cilium/operator/xds"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
@@ -107,13 +109,21 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return controllerruntime.Fail(err)
 		}
 	}
-
+	
 	grants := &gatewayv1beta1.ReferenceGrantList{}
 	if err := r.Client.List(ctx, grants); err != nil {
 		scopedLog.WithError(err).Error("Unable to list ReferenceGrants")
 		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
 	}
 
+	backendTrafficPolicyList := &ciliumv2.BackendTrafficPolicyList{}
+	if err := r.Client.List(ctx, backendTrafficPolicyList); err != nil {
+		scopedLog.WithError(err).Error("Unable to list BackendTrafficPolicies")
+		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
+	}
+	scopedLog.Infof("BackendTrafficPolicies length before filter :  %d", len(backendTrafficPolicyList.Items))
+	filterBackendTrafficPolicies(backendTrafficPolicyList, r.filterHTTPRoutesByGateway(ctx, gw, httpRouteList.Items), original)
+	scopedLog.Infof("BackendTrafficPolicies length :  %d", len(backendTrafficPolicyList.Items))
 	httpListeners, tlsListeners := ingestion.GatewayAPI(ingestion.Input{
 		GatewayClass:    *gwc,
 		Gateway:         *gw,
@@ -123,6 +133,7 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		Services:        servicesList.Items,
 		ServiceImports:  serviceImportsList.Items,
 		ReferenceGrants: grants.Items,
+		BackendTrafficPolicies: backendTrafficPolicyList,
 	})
 
 	if err := r.setListenerStatus(ctx, gw, httpRouteList, tlsRouteList); err != nil {
@@ -132,8 +143,22 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 	setGatewayAccepted(gw, true, "Gateway successfully scheduled")
 
+	securityPolicyList := &ciliumv2.SecurityPolicyList{}
+	if err := r.Client.List(ctx, securityPolicyList); err != nil {
+		scopedLog.WithError(err).Error("Unable to list SecurityPolicies")
+		return r.handleReconcileErrorWithStatus(ctx, err, original, gw)
+	}
+
+	*xds.GetGatewayRLChannel() <- &xds.GatewayRLEvent{
+		Name: original.GetName(),
+		Namespace: original.GetNamespace(),
+		BackendTrafficPolicies: *backendTrafficPolicyList,
+	}
+
+	security := prepareSecurity(original, securityPolicyList, r.filterHTTPRoutesByGateway(ctx, gw, httpRouteList.Items))
+
 	// Step 3: Translate the listeners into Cilium model
-	cec, svc, ep, err := r.translator.Translate(&model.Model{HTTP: httpListeners, TLS: tlsListeners})
+	cec, svc, ep, err := r.translator.Translate(&model.Model{HTTP: httpListeners, TLS: tlsListeners, Security: security, Name: original.Name, Namespace: original.Namespace})
 	if err != nil {
 		scopedLog.WithError(err).Error("Unable to translate resources")
 		setGatewayAccepted(gw, false, "Unable to translate resources")
@@ -172,6 +197,74 @@ func (r *gatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	scopedLog.Info("Successfully reconciled Gateway")
 	return controllerruntime.Success()
+}
+
+func filterBackendTrafficPolicies(backendTrafficPolicyList *ciliumv2.BackendTrafficPolicyList, httproutes []gatewayv1.HTTPRoute, gateway *gatewayv1.Gateway) {
+	backendTrafficPolicies := make([]ciliumv2.BackendTrafficPolicy, 0)
+	if backendTrafficPolicyList != nil {
+		for _, btp := range backendTrafficPolicyList.Items {
+			ns := k8helpers.NamespaceDerefOr(btp.Spec.TargetRef.Namespace, btp.GetNamespace())
+			if helpers.IsTargetRefHTTPRoute(btp.Spec.TargetRef) {
+				for _, hr := range httproutes {
+					if string(btp.Spec.TargetRef.Name) == hr.GetName() && ns == hr.GetNamespace() {
+						backendTrafficPolicies = append(backendTrafficPolicies, btp)
+					}
+				}
+			}
+			if helpers.IsTargetRefGateway(btp.Spec.TargetRef) {
+				if string(btp.Spec.TargetRef.Name) == gateway.GetName() && ns == gateway.GetNamespace() {
+					backendTrafficPolicies = append(backendTrafficPolicies, btp)
+				}
+			}
+		}
+	}
+	backendTrafficPolicyList.Items = backendTrafficPolicies
+}
+
+func prepareSecurity(gateway *gatewayv1.Gateway, securityPolicyList *ciliumv2.SecurityPolicyList, httproutes []gatewayv1.HTTPRoute) []model.Security {
+	var security []model.Security
+	if securityPolicyList != nil {
+		targettedHttpRoutes := make(map[string]interface{})
+		for _, sp := range securityPolicyList.Items {
+			ns := k8helpers.NamespaceDerefOr(sp.Spec.TargetRef.Namespace, sp.GetNamespace())
+			if helpers.IsTargetRefHTTPRoute(sp.Spec.TargetRef) {
+				for _, hr := range httproutes {
+					if string(sp.Spec.TargetRef.Name) == hr.GetName() && ns == hr.GetNamespace() {
+						security = append(security, model.Security{
+							SecurityPolicy: &sp,
+							HttpRouteRules: hr.Spec.Rules,
+						})
+						targettedHttpRoutes[helpers.GetNamespacedName(hr.GetNamespace(), hr.GetName())] = nil
+						continue
+					} else {
+						continue
+					}
+				}
+			}
+		}
+		for _, sp := range securityPolicyList.Items {
+			var rules []gatewayv1.HTTPRouteRule
+			if helpers.IsTargetRefGateway(sp.Spec.TargetRef) && string(sp.Spec.TargetRef.Name) == gateway.GetName() {
+				for _, hr := range httproutes {
+					if _, found := targettedHttpRoutes[helpers.GetNamespacedName(hr.GetNamespace(), hr.GetName())]; !found {
+						rules = append(rules, hr.Spec.Rules...)
+					}
+				}
+				if len(rules) > 0 {
+					security = append(security, model.Security{
+						SecurityPolicy: &sp,
+						HttpRouteRules: rules,
+					})
+				}
+				break
+			}
+		}
+	}
+	log.Infof("returning sec list count %+v", len(securityPolicyList.Items))
+	if len(security) > 0 {
+		log.Infof("returning sec with rules %+v", len(security[0].HttpRouteRules))
+	}
+	return security
 }
 
 func (r *gatewayReconciler) ensureService(ctx context.Context, desired *corev1.Service) error {
