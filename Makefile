@@ -628,3 +628,13 @@ test-with-simple-rate-limit:
 	-curl http://$(external_ip)/simple/21 -I  
 	-curl http://$(external_ip)/simple/21 -I 
 	-curl http://$(external_ip)/simple/21 -I 
+
+install-metallb:
+	- helm repo add metallb https://metallb.github.io/metallb
+	- kubectl create ns metallb-system
+	- helm install metallb metallb/metallb --version 0.13.11 --namespace=metallb-system
+	- echo "Waiting for deployments to be ready"
+	- kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller,app.kubernetes.io/instance=metallb -n metallb-system --timeout=300s
+	- kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=speaker -n metallb-system --timeout=300s
+	- kubectl apply -f try-out/metallb
+	
