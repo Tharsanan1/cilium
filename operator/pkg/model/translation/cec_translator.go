@@ -394,7 +394,7 @@ func (i *cecTranslator) getClusters(m *model.Model) []ciliumv2.XDSResource {
 	rlClusterName := "ratelimit-cluster"
 	sortedClusterNames = append(sortedClusterNames, rlClusterName)
 	rlPort := 8081
-	rlHost := "10.96.0.253"
+	rlHost := "10.0.0.253"
 	rlMutators := []ClusterMutator{
 		WithConnectionTimeout(5),
 		WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),
