@@ -2495,7 +2495,7 @@ operator:
   image:
     override: ~
     repository: "tharsanan/operator"
-    tag: "latest"
+    tag: "0.0.1"
     # operator-generic-digest
     genericDigest: "sha256:404890a83cca3f28829eb7e54c1564bb6904708cdb7be04ebe69c2b60f164e9a"
     # operator-azure-digest

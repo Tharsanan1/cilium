@@ -87,6 +87,8 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
+        - name: KUBERNETES_RATELIMIT_HOST
+          value: 10.96.0.253
         - name: CILIUM_K8S_NAMESPACE
           valueFrom:
             fieldRef:

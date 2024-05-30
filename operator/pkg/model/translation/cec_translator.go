@@ -8,6 +8,7 @@ import (
 	"fmt"
 	goslices "slices"
 	"sort"
+	"os"
 
 	envoy_config_cluster_v3 "github.com/cilium/proxy/go/envoy/config/cluster/v3"
 	envoy_config_route_v3 "github.com/cilium/proxy/go/envoy/config/route/v3"
@@ -395,6 +396,12 @@ func (i *cecTranslator) getClusters(m *model.Model) []ciliumv2.XDSResource {
 	sortedClusterNames = append(sortedClusterNames, rlClusterName)
 	rlPort := 8081
 	rlHost := "10.0.0.253"
+	if os.Getenv("KUBERNETES_RATELIMIT_HOST") != "" {
+		rlHost = os.Getenv("KUBERNETES_RATELIMIT_HOST")
+	}
+	log.Infof("RL cluster IP set to %+v  , %s", rlHost, os.Getenv("KUBERNETES_RATELIMIT_HOST"))
+	
+	
 	rlMutators := []ClusterMutator{
 		WithConnectionTimeout(5),
 		WithClusterLbPolicy(int32(envoy_config_cluster_v3.Cluster_ROUND_ROBIN)),

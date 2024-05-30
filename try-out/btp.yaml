@@ -35,8 +35,14 @@ spec:
     global:
       rules:
       - limit:
-          requests: 2
+          requests: 3
           unit: Minute
+
+
+
+
+
+          
 ---
 apiVersion: cilium.io/v2
 kind: BackendTrafficPolicy 

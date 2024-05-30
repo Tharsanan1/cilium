@@ -574,7 +574,9 @@ run-builder: ## Drop into a shell inside a container running the cilium-builder 
 	DOCKER_ARGS=-it contrib/scripts/builder.sh bash
 
 
-TOKEN=$(shell curl -s -X POST https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/token -d "client_id=service&username=demo&password=abcd1234&grant_type=password" | jq -r '.access_token')
+# TOKEN=$(shell curl -s -X POST https://auth.funnel-labs.io/auth/realms/funnel/protocol/openid-connect/token -d "client_id=service&username=demo&password=abcd1234&grant_type=password" | jq -r '.access_token')
+TOKEN=$(shell curl -s -X POST https://api.asgardeo.io/t/testorgforsecurity/oauth2/token -d "client_id=vya4nZXkZucFxJuzyQxxQ5oVE98a&client_secret=vet_hGeYO_UieVKXXVVuexXwm_eLKmLoVtwAc5TZBvga&grant_type=client_credentials" | jq -r '.access_token')
+
 external_ip=$(shell kubectl get svc cilium-gateway-my-gateway -o=jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 install-cilium-with-auth-rl:
@@ -586,44 +588,52 @@ install-cilium-with-auth-rl:
 	-kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=300s
 	# Cilium is ready handle authentications and ratelimits go ahead and tryout.....
 
-setup-with-auth:
-	-kubectl apply -f try-out/resources.yaml
+uninstall-cilium:
+	- cd cilium-1.15.4/cilium && helm uninstall cilium -n kube-system
+	- kubectl delete -f try-out/backend.yaml
+	- kubectl delete -f try-out/routes.yaml
+	- kubectl delete -f try-out/gateway.yaml
+	- kubectl delete -f try-out/securitypolicy-cr.yaml
+	- kubectl delete -f try-out/btp.yaml
+	- helm uninstall metallb --namespace=metallb-system
+
+
+setup-gateway:
+	- kubectl apply -f try-out/gateway.yaml
+
+deploy-backends:
+	- kubectl apply -f try-out/backend.yaml
+
+setup-routes:
+	-  kubectl apply -f try-out/routes.yaml
+
+send-details-request:
+	- curl http://$(external_ip)/details/21 -I
+
+setup-auth:
 	-kubectl apply -f try-out/securitypolicy-cr.yaml
-	-kubectl delete -f try-out/btp.yaml
 	echo "Waiting for deployments to be ready"
 	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
-test-without-auth-header:
-	-curl http://$(external_ip)/details/21 -I
 
-test-with-auth-header:
+send-details-request-with-auth-header:
 	-curl http://$(external_ip)/details/21 -I --header "Authorization: Bearer $(TOKEN)"
 
-setup-with-rate-limit:
-	-kubectl apply -f try-out/resources.yaml
+setup-rate-limit:
 	-kubectl delete -f try-out/securitypolicy-cr.yaml
 	-kubectl apply -f try-out/btp.yaml
 	echo "Waiting for deployments to be ready"
 	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
-setup-with-rate-limit-and-auth:
-	-kubectl apply -f try-out/resources.yaml
-	-kubectl apply -f try-out/securitypolicy-cr.yaml
-	-kubectl apply -f try-out/btp.yaml
-	echo "Waiting for deployments to be ready"
-	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
 
-test-with-rate-limit-with-auth-header:
-	-curl http://$(external_ip)/details/21 -I --header "Authorization: Bearer $(TOKEN)" --header "x-user-id-1:one"  --header "x-user-id:one"
-
-test-with-rate-limit-custom-headers:
+test-rate-limit-custom-headers:
 	-curl http://$(external_ip)/details/21 -I
 	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
 	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
 	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
 	-curl http://$(external_ip)/details/21 -I  --header "x-user-id-1:one"  --header "x-user-id:one"
 
-test-with-simple-rate-limit:
+test-simple-rate-limit:
 	-curl http://$(external_ip)/simple/21 -I 
 	-curl http://$(external_ip)/simple/21 -I  
 	-curl http://$(external_ip)/simple/21 -I 
@@ -638,3 +648,14 @@ install-metallb:
 	- kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=speaker -n metallb-system --timeout=300s
 	- kubectl apply -f try-out/metallb
 	
+
+setup-rate-limit-and-auth:
+	-kubectl apply -f try-out/resources.yaml
+	-kubectl apply -f try-out/securitypolicy-cr.yaml
+	-kubectl apply -f try-out/btp.yaml
+	echo "Waiting for deployments to be ready"
+	-kubectl wait --for=condition=ready pod -l app=echoserver -n default --timeout=300s
+
+
+test-rate-limit-with-auth-header:
+	-curl http://$(external_ip)/details/21 -I --header "Authorization: Bearer $(TOKEN)" --header "x-user-id-1:one"  --header "x-user-id:one"
